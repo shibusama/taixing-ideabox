@@ -6,5 +6,5 @@ build = ["pnpm", "install"]
 run = ["pnpm", "run", "dev"]
 
 [deploy]
-build = ["sh", "server/build.sh"]
+build = ["pip", "install", "-r", "server/requirements.txt", "-q"]
 run = ["sh", "server/start.sh"]

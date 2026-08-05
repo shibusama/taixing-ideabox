@@ -269,106 +269,73 @@ def extract_media(work_dir, mp4_path, fps_interval):
     return audio, contact_sheet, media_info
 
 
-def _ensure_whisper_model(model_name: str) -> str:
-    """Ensure the whisper model is available locally.
-    
-    Tries to find the model in the huggingface cache first.
-    If not found, downloads from ModelScope (魔搭) and sets up the cache.
-    Returns the model path (a directory path if local, or the model name if already cached).
+def transcribe(work_dir, audio, model_name="", skip=False):
+    """Transcribe audio using Coze ASR service (cloud API, no local model needed).
+    Uploads audio to object storage and calls ASR API.
     """
-    import os, shutil
-    
-    # Check if model_name is already a directory path
-    if os.path.isdir(model_name):
-        return model_name
-    
-    # Check huggingface cache
-    hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
-    model_cache_dir = os.path.join(hf_home, "hub", f"models--systran--faster-whisper-{model_name}")
-    snapshots_dir = os.path.join(model_cache_dir, "snapshots")
-    if os.path.isdir(snapshots_dir):
-        snapshots = os.listdir(snapshots_dir)
-        if snapshots:
-            cached_path = os.path.join(snapshots_dir, snapshots[0])
-            if os.path.isdir(cached_path) and os.path.isfile(os.path.join(cached_path, "model.bin")):
-                return cached_path  # use local path directly
-    
-    # Not cached - download from ModelScope
-    try:
-        from modelscope.hub.snapshot_download import snapshot_download
-        modelscope_model_id = f"Systran/faster-whisper-{model_name}"
-        
-        print(f"[whisper] Downloading {model_name} from ModelScope...", file=sys.stderr)
-        ms_cache_dir = os.path.join(
-            os.environ.get("MODELSCOPE_CACHE", os.path.expanduser("~/.cache/modelscope"))
-        )
-        model_dir = snapshot_download(modelscope_model_id, cache_dir=ms_cache_dir)
-        print(f"[whisper] ModelScope download path: {model_dir}", file=sys.stderr)
-        
-        # Copy to huggingface cache structure
-        os.makedirs(model_cache_dir, exist_ok=True)
-        snapshots_dir = os.path.join(model_cache_dir, "snapshots")
-        os.makedirs(snapshots_dir, exist_ok=True)
-        
-        snapshot_hash = "modelscope_downloaded"
-        target_dir = os.path.join(snapshots_dir, snapshot_hash)
-        os.makedirs(target_dir, exist_ok=True)
-        
-        # Copy model files from the actual download path
-        for fname in os.listdir(model_dir):
-            src = os.path.join(model_dir, fname)
-            dst = os.path.join(target_dir, fname)
-            if not os.path.exists(dst):
-                if os.path.isfile(src):
-                    shutil.copy2(src, dst)
-                elif os.path.isdir(src):
-                    shutil.copytree(src, dst, dirs_exist_ok=True)
-        
-        # Create refs/main so huggingface_hub can find the revision
-        refs_dir = os.path.join(model_cache_dir, "refs")
-        os.makedirs(refs_dir, exist_ok=True)
-        with open(os.path.join(refs_dir, "main"), "w") as f:
-            f.write(snapshot_hash)
-        
-        os.environ["HF_HOME"] = hf_home
-        
-        print(f"[whisper] Model cached at {target_dir}", file=sys.stderr)
-        return target_dir
-    except Exception as exc:
-        print(f"[whisper] ModelScope download failed: {exc}", file=sys.stderr)
-        print(f"[whisper] Falling back to model name: {model_name}", file=sys.stderr)
-        return model_name
-
-
-def transcribe(work_dir, audio, model_name, skip=False):
     if skip:
         return {"available": False, "skipped": True}
-    try:
-        from faster_whisper import WhisperModel
-    except Exception as exc:
-        return {"available": False, "error": f"faster-whisper unavailable: {exc}"}
 
     started = time.time()
-    model_path = _ensure_whisper_model(model_name)
-    model = WhisperModel(model_path, device="cpu", compute_type="int8", local_files_only=True)
-    segments, info = model.transcribe(str(audio), language="zh", vad_filter=True, beam_size=5)
-    rows = [
-        {"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip()}
-        for seg in segments
-    ]
-    transcript_json = {
-        "language": info.language,
-        "duration": info.duration,
-        "segments": rows,
-        "elapsed_seconds": round(time.time() - started, 1),
-        "model": model_name,
-    }
-    (work_dir / "transcript.json").write_text(json.dumps(transcript_json, ensure_ascii=False, indent=2), encoding="utf-8")
-    (work_dir / "transcript.txt").write_text(
-        "\n".join(f"[{row['start']:06.2f}-{row['end']:06.2f}] {row['text']}" for row in rows),
-        encoding="utf-8",
-    )
-    return {"available": True, "segments": len(rows), "elapsed_seconds": transcript_json["elapsed_seconds"], "model": model_name}
+    audio_path = pathlib.Path(audio)
+    if not audio_path.exists():
+        return {"available": False, "error": f"Audio file not found: {audio}"}
+
+    try:
+        # Convert WAV to MP3 (ASR supports MP3 better)
+        mp3_path = audio_path.with_suffix(".mp3")
+        ffmpeg = shutil.which("ffmpeg")
+        if ffmpeg:
+            subprocess.run(
+                [ffmpeg, "-y", "-i", str(audio_path), "-acodec", "mp3", "-b:a", "64k", str(mp3_path)],
+                capture_output=True, timeout=120,
+            )
+            audio_for_upload = mp3_path if mp3_path.exists() else audio_path
+        else:
+            audio_for_upload = audio_path
+
+        # Upload to object storage
+        from coze_coding_dev_sdk import S3SyncStorage, ASRClient
+
+        s3 = S3SyncStorage()
+        with open(audio_for_upload, "rb") as f:
+            audio_bytes = f.read()
+        object_key = s3.upload_file(audio_bytes, content_type="audio/mpeg")
+        audio_url = s3.generate_presigned_url(object_key, expires=3600)
+
+        # Call ASR
+        asr = ASRClient(
+            base_url=os.environ.get("COZE_ASR_BASE_URL", ""),
+            api_key="",
+        )
+        result = asr.recognize(url=audio_url, format="mp3")
+
+        # Parse result - ASR returns text directly
+        transcript_text = result if isinstance(result, str) else (result.get("text", "") if isinstance(result, dict) else str(result))
+        rows = [{"start": 0, "end": 0, "text": transcript_text.strip()}]
+
+        transcript_json = {
+            "language": "zh",
+            "duration": round(time.time() - started, 1),
+            "segments": rows,
+            "elapsed_seconds": round(time.time() - started, 1),
+            "model": "coze-asr",
+        }
+        (work_dir / "transcript.json").write_text(
+            json.dumps(transcript_json, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (work_dir / "transcript.txt").write_text(
+            transcript_text.strip(), encoding="utf-8"
+        )
+        return {
+            "available": True,
+            "segments": len(rows),
+            "elapsed_seconds": transcript_json["elapsed_seconds"],
+            "model": "coze-asr",
+        }
+    except Exception as exc:
+        print(f"[asr] ASR transcription failed: {exc}", file=sys.stderr)
+        return {"available": False, "error": str(exc)}
 
 
 def build_low_cost_material(work_dir, material, max_chars):
@@ -471,10 +438,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", required=True, help="WeChat Channels or Douyin share URL/text")
     parser.add_argument("--work-dir", required=True, help="Directory for intermediate files")
-    parser.add_argument("--model", default="small", help="faster-whisper model name, default: small")
+    parser.add_argument("--model", default="", help="(unused, kept for compatibility)")
     parser.add_argument("--frame-interval", type=int, default=10, help="Seconds between sampled frames")
     parser.add_argument("--douyin-cookie", default="", help="Optional user-provided Douyin Cookie header")
-    parser.add_argument("--no-transcript", action="store_true", help="Skip faster-whisper transcription")
+    parser.add_argument("--no-transcript", action="store_true", help="Skip ASR transcription")
     parser.add_argument("--low-cost-chars", type=int, default=2400, help="Max transcript preview characters for low-cost material")
     args = parser.parse_args()
 
