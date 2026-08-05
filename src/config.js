@@ -4,7 +4,7 @@
  * 优先级：
  *   1. 构建时注入的 window.APP_CONFIG.apiBase（Nginx 部署时在 index.html 里配置）
  *   2. Vite 环境变量 VITE_API_BASE（.env 或构建命令传入）
- *   3. 默认值：同源 /api（生产 Nginx 反代），开发环境回退 127.0.0.1:8000
+ *   3. 默认值：空字符串（同源）。开发环境由 Vite 代理把 /api 转发到本地后端，生产同源由后端统一服务
  */
 function resolveApiBase() {
   // 1. 运行时注入（最灵活，改 index.html 即可切换后端，无需重新构建）
@@ -15,11 +15,7 @@ function resolveApiBase() {
   if (import.meta.env && import.meta.env.VITE_API_BASE) {
     return import.meta.env.VITE_API_BASE
   }
-  // 3. 默认：开发环境连本地后端 8000；生产环境同源（请求路径自带 /api，无需前缀）
-  const isDev = import.meta.env && import.meta.env.DEV
-  if (isDev) {
-    return 'http://127.0.0.1:8000'
-  }
+  // 3. 默认：开发环境由 Vite 代理转发 /api 到本地后端；生产同源（请求路径自带 /api，无需前缀）
   return ''
 }
 

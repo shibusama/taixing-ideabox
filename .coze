@@ -2,8 +2,8 @@
 requires = ["python3-3.12"]
 
 [dev]
-build = ["pnpm", "install"]
-run = ["pnpm", "run", "dev"]
+build = ["sh", "-c", "pip install -r server/requirements.txt && pnpm install"]
+run = ["sh", "server/dev.sh"]
 
 [deploy]
 build = ["pip", "install", "-r", "server/requirements.txt"]
