@@ -6,7 +6,7 @@ Compatible with both SQLite (local dev) and PostgreSQL (production).
 
 from sqlalchemy import Column, String, Float, Boolean, Text
 from sqlalchemy.dialects.postgresql import JSONB
-from .db import Base
+from db import Base
 
 
 class Idea(Base):
@@ -19,6 +19,19 @@ class Idea(Base):
     created_at = Column(Float, nullable=False)
     updated_at = Column(Float, nullable=False)
     deleted_at = Column(Float, nullable=True)
+
+    def to_dict(self, include_deleted=False):
+        d = {
+            "id": self.id,
+            "content": self.content,
+            "tags": list(self.tags) if self.tags else [],
+            "pinned": bool(self.pinned),
+            "createdAt": self.created_at,
+            "updatedAt": self.updated_at,
+        }
+        if include_deleted and self.deleted_at is not None:
+            d["deletedAt"] = self.deleted_at
+        return d
 
 
 class Tag(Base):
