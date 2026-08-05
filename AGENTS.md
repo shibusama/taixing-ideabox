@@ -90,3 +90,36 @@ pnpm run build
 - 样式使用 Tailwind CSS 原子类
 - 状态管理使用自定义 Hooks
 - 文件命名：组件 PascalCase，工具函数 camelCase
+
+## 常见问题与修复记录
+
+### 1. 部署环境没有 Node.js，前端必须在本地构建
+- **问题**：部署环境（Coze Vefaas）只有 Python 3.12，没有 Node.js/pnpm
+- **修复**：`dist/` 必须在本地构建并提交到 Git，部署时 `.coze` 的 build 只装 Python 依赖
+- **工作流**：改代码 → `pnpm run build` → 提交 Git（含 `dist/`）→ 部署
+- 不要把 `dist/` 加到 `.gitignore`
+
+### 2. 生产环境使用 PostgreSQL，开发环境用 SQLite
+- `server/db.py` 检测 `PGDATABASE_URL` 环境变量：有则连 PostgreSQL，没有则回退 SQLite
+- 生产环境日志中 `PGDATABASE_URL=SET` 表示正使用 PostgreSQL
+- 表结构由 SQLAlchemy ORM 自动创建（SQLite 下 `init_db()` 触发建表）
+
+### 3. 健康检查端点不是 `/v1/ping`
+- 项目提供 `/api/health` 作为健康检查接口
+- 部署平台可能发 `GET /v1/ping` 探活，返回 404 是正常的，不影响功能
+- 如需消除 404 日志，可加一个 `/v1/ping` 路由：`@app.get("/v1/ping")`
+
+### 4. 前端 API 地址解析
+- `src/config.js` 按优先级：`window.APP_CONFIG.apiBase` > `VITE_API_BASE` 环境变量 > 默认值
+- 开发环境默认：`http://127.0.0.1:8000`（Python FastAPI 开发服务器）
+- 生产环境默认：`/api`（同源，由 Python 服务统一提供）
+
+### 5. 项目清理记录（已执行）
+- `src/hooks/useLocalStorage.js` — 已废弃的死代码，已删除
+- 根目录 `ideabox.db*` — 误生成的数据库文件，已删除
+- `package-lock.json` — 混用 npm 导致的 lock 文件，已删除
+- `assets/` — 临时截图，已删除
+- `server/__init__.py` — 空文件，已删除
+- `server/migrate_cache.py` / `server/migrate_db.py` — 一次性迁移脚本，已删除
+- `server/test_transcribe.py` — 测试脚本，已删除
+- `server/work/` — 空目录，已删除
