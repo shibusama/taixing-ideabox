@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-cream text-pop-black antialiased;
+    background-image: radial-gradient(circle, #0a0a0a 1px, transparent 1.5px);
+    background-size: 18px 18px;
+    background-position: 0 0;
+    overflow-x: hidden;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #fef9e7;
+    border-left: 3px solid #0a0a0a;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #ff2e3b;
+    border: 2px solid #0a0a0a;
+    border-radius: 0;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2d7dff;
+  }
+
+  ::selection {
+    @apply bg-pop-yellow text-pop-black;
+  }
+
+  :focus-visible {
+    outline: 3px solid #2d7dff;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* === CORE POP ART SURFACES === */
+  .pop-card {
+    @apply bg-white border-3 border-pop-black shadow-pop
+           transition-all duration-150;
+  }
+  .pop-card:hover {
+    @apply shadow-pop-lg;
+    transform: translate(-2px, -2px);
+  }
+
+  .pop-panel {
+    @apply bg-white border-3 border-pop-black;
+  }
+
+  /* === HALFTONE BACKGROUNDS === */
+  .halftone-red {
+    background-image: radial-gradient(circle, #ff2e3b 1.5px, transparent 2px);
+    background-size: 12px 12px;
+  }
+  .halftone-blue {
+    background-image: radial-gradient(circle, #2d7dff 1.5px, transparent 2px);
+    background-size: 12px 12px;
+  }
+  .halftone-yellow {
+    background-image: radial-gradient(circle, #ffd60a 1.5px, transparent 2px);
+    background-size: 10px 10px;
+  }
+
+  /* === TEXT STYLES === */
+  .text-display {
+    @apply font-display tracking-wide uppercase;
+    text-shadow: 3px 3px 0 #0a0a0a;
+  }
+
+  .text-stroke {
+    -webkit-text-stroke: 2px #0a0a0a;
+    paint-order: stroke fill;
+  }
+
+  /* === BUTTONS === */
+  .btn-pop {
+    @apply inline-flex items-center justify-center gap-2
+           font-display tracking-wide uppercase text-lg
+           border-3 border-pop-black
+           px-5 py-2
+           shadow-pop
+           transition-all duration-150
+           active:shadow-pop-sm active:translate-x-0.5 active:translate-y-0.5
+           disabled:opacity-40 disabled:cursor-not-allowed
+           disabled:active:translate-x-0 disabled:active:translate-y-0;
+  }
+  .btn-pop:hover:not(:disabled) {
+    @apply shadow-pop-lg;
+    transform: translate(-2px, -2px);
+  }
+
+  .btn-pop-red    { @apply btn-pop bg-pop-red text-white; }
+  .btn-pop-blue   { @apply btn-pop bg-pop-blue text-white; }
+  .btn-pop-yellow { @apply btn-pop bg-pop-yellow text-pop-black; }
+  .btn-pop-green  { @apply btn-pop bg-pop-green text-white; }
+
+  .btn-ghost-pop {
+    @apply inline-flex items-center gap-1.5
+           font-sans font-semibold text-pop-black
+           border-2 border-pop-black bg-white
+           px-3 py-1.5 rounded-none
+           transition-all duration-150
+           hover:bg-pop-yellow hover:shadow-pop-sm
+           active:translate-x-0.5 active:translate-y-0.5;
+  }
+
+  /* === INPUTS === */
+  .input-pop {
+    @apply bg-white border-3 border-pop-black text-pop-black
+           placeholder-gray-400 rounded-none
+           transition-all duration-150
+           focus:outline-none focus:shadow-pop
+           focus:translate-x-[-2px] focus:translate-y-[-2px];
+  }
+
+  /* === TAGS === */
+  .tag-pop {
+    @apply inline-flex items-center gap-1
+           px-2.5 py-1 rounded-none
+           text-xs font-bold font-sans uppercase tracking-wide
+           border-2 border-pop-black
+           transition-all duration-150 cursor-pointer
+           hover:shadow-pop-sm hover:translate-x-[-1px] hover:translate-y-[-1px]
+           active:translate-x-0 active:translate-y-0 active:shadow-none;
+  }
+
+  /* === STAR BURST DECORATION === */
+  .star-burst {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .star-burst::before {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    background: var(--burst-color, #ffd60a);
+    clip-path: polygon(
+      50% 0%, 61% 18%, 80% 10%, 73% 29%, 95% 25%,
+      82% 41%, 100% 50%, 82% 59%, 95% 75%, 73% 71%,
+      80% 90%, 61% 82%, 50% 100%, 39% 82%, 20% 90%,
+      27% 71%, 5% 75%, 18% 59%, 0% 50%, 18% 41%,
+      5% 25%, 27% 29%, 20% 10%, 39% 18%
+    );
+    z-index: 0;
+  }
+  .star-burst > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  .rotate-1deg { transform: rotate(1deg); }
+  .rotate-neg-1deg { transform: rotate(-1deg); }
+  .rotate-2deg { transform: rotate(2deg); }
+  .rotate-neg-2deg { transform: rotate(-2deg); }
+}
