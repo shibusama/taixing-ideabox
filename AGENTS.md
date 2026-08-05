@@ -1,34 +1,31 @@
 # AGENTS.md - 灵感匣 IdeaBox
 
 ## 项目概览
-个人灵感与想法记录平台，波普艺术漫画书风格。数据存储在后端 SQLite（`server/ideabox.db`，SQLAlchemy），前端通过 API 读写；旧 LocalStorage 数据首次加载时自动迁移一次。
-附带一个 FastAPI 后端（`server/`）提供「视频链接 → 思维导图」能力。
+个人灵感与想法记录平台，波普艺术漫画书风格。数据存储在后端 SQLite（`server/ideabox.db`），前端通过 API 读写；旧 LocalStorage 数据首次加载时自动迁移一次。
 
 ## 技术栈
 - **React 18** + **Vite 6** + **Tailwind CSS 3**
-- 数据存储：后端 SQLite（SQLAlchemy ORM，`server/ideabox.db`），前端 `useIdeas` hook 调 REST API
+- 数据存储：后端 SQLite（`node:sqlite`，`server/ideabox.db`），前端 `useIdeas` hook 调 REST API
 - 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频导图（markmap 渲染）
-- 后端：FastAPI（`server/`，依赖用户 Codex skill 的 prepare_video.py）
-- 包管理器：pnpm（本地环境无 pnpm 时可用 npm）
+- 后端：Node.js 24（`server.cjs`，内置 `node:sqlite`）
+- 包管理器：pnpm
 
 ## 构建与运行
 ```bash
 # 安装依赖
 pnpm install
 
-# 开发模式（前端）
+# 开发模式（前端 Vite HMR）
 pnpm run dev
 
-# 构建生产版本
+# 生产构建
 pnpm run build
 
-# 预览生产构建
-pnpm run preview
+# 一键启动生产服务（前端 + API）
+node server.cjs
 
-# 后端（另开终端）
-cd server
-./.venv/Scripts/python -m uvicorn app:app --host 127.0.0.1 --port 8000
-# 详见 server/README.md
+# 或使用脚本
+sh start.sh
 ```
 
 ## 目录结构
@@ -38,39 +35,49 @@ cd server
 ├── vite.config.js          # Vite 配置
 ├── tailwind.config.js      # Tailwind 主题配置
 ├── postcss.config.js       # PostCSS 配置
+├── server.cjs              # Node.js 服务端（API + 静态文件托管）
+├── build.sh                # 构建脚本（部署用）
+├── start.sh                # 启动脚本（部署用）
 ├── public/
 │   └── favicon.svg         # 图标
-├── server/                 # FastAPI 后端（SQLite 存储，详见 server/README.md）
-│   ├── app.py              # API 入口：灵感 CRUD + 任务管理 + 导图缓存
-│   ├── db.py               # SQLAlchemy engine / session / init
-│   ├── models.py           # 4 张表模型（Idea/Tag/Mindmap/Task）
-│   ├── llm.py              # LLM 接口位（默认模板，可配硅基流动/OpenAI 兼容）
-│   ├── migrate_cache.py    # 一次性：旧 cache/*.json → mindmaps 表
+├── server/                 # Python 开发后端（可选，本地开发用）
+│   ├── app.py              # FastAPI 入口
+│   ├── db.py               # SQLAlchemy 配置
+│   ├── models.py           # 数据模型
+│   ├── llm.py              # LLM 接口
 │   ├── requirements.txt
 │   ├── ideabox.db          # SQLite 数据库（自动创建）
-│   ├── cache/              # 旧版文件缓存（已废弃）
-│   └── work/               # 视频解析中间产物
+│   └── skills/             # 视频解析技能脚本
 └── src/
     ├── main.jsx            # React 入口
-    ├── App.jsx             # 主应用（布局/状态管理/筛选逻辑/视图切换）
+    ├── App.jsx             # 主应用
     ├── index.css           # 全局样式 + Tailwind
+    ├── config.js           # 配置（API 地址等）
     ├── hooks/
-    │   └── useIdeas.js         # 灵感 CRUD hook（调后端 API + 操作队列）
+    │   └── useIdeas.js         # 灵感 CRUD hook
     ├── utils/
     │   └── helpers.js          # 工具函数
     ├── data/
     │   └── tags.js             # 标签颜色配置
     └── components/
-        ├── Header.jsx          # 顶部导航栏（列表/看板/视频导图切换）
+        ├── Header.jsx          # 顶部导航栏
         ├── IdeaInput.jsx       # 快速捕捉输入框
         ├── IdeaCard.jsx        # 灵感卡片
-        ├── IdeaList.jsx        # 列表（日期分组 + 置顶区）
-        ├── BoardView.jsx       # 看板视图（标签分列 + 拖拽打标签）
-        ├── VideoMindmap.jsx    # 视频导图视图（链接输入 + markmap 渲染）
+        ├── IdeaList.jsx        # 列表视图
+        ├── BoardView.jsx       # 看板视图
+        ├── VideoMindmap.jsx    # 视频导图
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
         └── EmptyState.jsx      # 空状态
 ```
+
+## 部署架构
+- `.coze` 配置：`requires = ["nodejs-24"]`（仅需 Node.js）
+- 部署流程：
+  1. `build` → `sh build.sh` → `pnpm install && pnpm run build`（生成 `dist/`）
+  2. `run` → `sh start.sh` → `node server.cjs`（启动服务）
+- 服务端 `server.cjs` 使用 Node.js 24 内置 `node:sqlite` 模块，无需额外依赖
+- 统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法

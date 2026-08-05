@@ -1,5 +1,5 @@
 [project]
-requires = ["nodejs-24", "python3-3.12"]
+requires = ["nodejs-24"]
 
 [dev]
 build = ["pnpm", "install"]
