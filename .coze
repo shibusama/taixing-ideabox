@@ -7,4 +7,4 @@ run = ["pnpm", "run", "dev"]
 
 [deploy]
 build = ["pnpm", "run", "build"]
-run = ["pnpm", "run", "preview"]
+run = ["sh", "-c", "npx vite preview --host --port ${DEPLOY_RUN_PORT}"]
