@@ -1,13 +1,13 @@
 # AGENTS.md - 灵感匣 IdeaBox
 
 ## 项目概览
-个人灵感与想法记录平台，波普艺术漫画书风格。数据存储在后端 SQLite（`server/ideabox.db`），前端通过 API 读写；旧 LocalStorage 数据首次加载时自动迁移一次。
+个人灵感与想法记录平台，波普艺术漫画书风格。数据存储在后端 PostgreSQL（部署环境）/ SQLite（开发环境），前端通过 API 读写；旧 LocalStorage 数据首次加载时自动迁移一次。
 
 ## 技术栈
 - **React 18** + **Vite 6** + **Tailwind CSS 3**
-- 数据存储：后端 SQLite（`server/ideabox.db`），前端 `useIdeas` hook 调 REST API
+- 数据存储：后端 PostgreSQL（部署）/ SQLite（开发），前端 `useIdeas` hook 调 REST API
 - 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频导图（markmap 渲染）
-- 后端：Python FastAPI + SQLite（`server/app.py`）
+- 后端：Python FastAPI + PostgreSQL（部署）/ SQLite（开发）
 - 包管理器：pnpm
 
 ## 构建与运行
@@ -67,12 +67,12 @@ pnpm run build
 ```
 
 ## 部署架构
-- `.coze` 配置：`requires = ["python-312"]`（Python 运行时）
-- `dist/` 已构建并提交到 Git，部署时无需前端构建
+- `.coze` 配置：`requires = ["python3-3.12"]`（Python 3.12 运行时）
+- `dist/` 已构建并提交到 Git，部署时无需前端构建（‼️ `dist/` 不能加 `.gitignore`）
 - 部署流程：
   1. `build` → `pip install -r server/requirements.txt`（安装 Python 依赖）
-  2. `run` → `sh server/start.sh` → `cd server && uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
-- 服务端 `server/app.py` 使用 FastAPI + SQLite/PostgreSQL，统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
+  2. `run` → `sh server/start.sh` → `cd server && WORK_ROOT=/tmp/ideabox/work uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
+- 服务端 `server/app.py` 使用 FastAPI + PostgreSQL（部署）/ SQLite（开发），统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法
@@ -103,6 +103,7 @@ pnpm run build
 - `server/db.py` 检测 `PGDATABASE_URL` 环境变量：有则连 PostgreSQL，没有则回退 SQLite
 - 生产环境日志中 `PGDATABASE_URL=SET` 表示正使用 PostgreSQL
 - 表结构由 SQLAlchemy ORM 自动创建（SQLite 下 `init_db()` 触发建表）
+- ⚠️ `COZE_SUPABASE_URL` 是 Supabase API 的 HTTPS 地址，**不是**数据库连接串，SQLAlchemy 无法识别。必须用 `PGDATABASE_URL`
 
 ### 3. 健康检查端点不是 `/v1/ping`
 - 项目提供 `/api/health` 作为健康检查接口
@@ -114,7 +115,28 @@ pnpm run build
 - 开发环境默认：`http://127.0.0.1:8000`（Python FastAPI 开发服务器）
 - 生产环境默认：`/api`（同源，由 Python 服务统一提供）
 
-### 5. 项目清理记录（已执行）
+### 5. 部署环境 server/ 目录只读，WORK_ROOT 不能放 server/ 下
+- **问题**：`app.py` 中 `WORK_ROOT = BASE_DIR / "work"`，部署时 `server/` 目录是只读文件系统，`mkdir` 报错 `OSError: [Errno 30] Read-only file system`
+- **修复**：`WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
+- **`server/start.sh`** 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
+- 本地开发时 `WORK_ROOT` 默认为 `server/work/`（无环境变量时）
+
+### 6. 数据库连接变量用错：COZE_SUPABASE_URL ≠ PGDATABASE_URL
+- **问题**：`db.py` 之前读取 `COZE_SUPABASE_URL`，但该变量值是 Supabase API 的 HTTPS 地址（如 `https://br-cosy-cow-...`），SQLAlchemy 不认识，报错 `Can't load plugin: sqlalchemy.dialects:https`
+- **修复**：改为读取 `PGDATABASE_URL`（真正的 PostgreSQL 连接串，如 `postgresql://user:pass@host:5432/db`）
+- 两个变量在沙箱中都存在，但部署环境只有 `PGDATABASE_URL` 有效
+
+### 7. pip install -q 静默标志导致看不见安装错误
+- **问题**：`.coze` 中 `pip install -q` 会隐藏所有安装输出，部署失败时无法判断是否包没装上
+- **修复**：去掉 `-q` 标志，让 `pip install` 输出完整日志
+- 部署日志现在会显示每个包的下载和安装状态
+
+### 8. 视频解析模型太大，部署环境下载超时
+- **问题**：`faster-whisper` 模型约 461MB，部署环境 build 阶段只有 30 秒超时，根本下载不完
+- **尝试修复**：使用 ModelScope 镜像下载，但缓存格式不兼容
+- **最终修复**：改用 Coze 平台云 ASR 服务（`coze_coding_dev_sdk.ASRClient`），上传音频到对象存储 → 调用云端语音识别，无需本地模型
+
+### 9. 项目清理记录（已执行）
 - `src/hooks/useLocalStorage.js` — 已废弃的死代码，已删除
 - 根目录 `ideabox.db*` — 误生成的数据库文件，已删除
 - `package-lock.json` — 混用 npm 导致的 lock 文件，已删除
