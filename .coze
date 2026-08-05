@@ -1,10 +1,10 @@
 [project]
-requires = ["nodejs-24"]
+requires = ["python3-3.12"]
 
 [dev]
 build = ["pnpm", "install"]
 run = ["pnpm", "run", "dev"]
 
 [deploy]
-build = ["sh", "build.sh"]
-run = ["sh", "start.sh"]
+build = ["pip", "install", "-r", "server/requirements.txt", "-q"]
+run = ["sh", "server/start.sh"]
