@@ -15,12 +15,12 @@ function resolveApiBase() {
   if (import.meta.env && import.meta.env.VITE_API_BASE) {
     return import.meta.env.VITE_API_BASE
   }
-  // 3. 默认：同源走 /api（生产由 Nginx 反代）；开发环境 Vite 默认 5173 → 后端 8000
+  // 3. 默认：开发环境连本地后端 8000；生产环境同源（请求路径自带 /api，无需前缀）
   const isDev = import.meta.env && import.meta.env.DEV
   if (isDev) {
     return 'http://127.0.0.1:8000'
   }
-  return '/api'
+  return ''
 }
 
 export const API_BASE = resolveApiBase()
