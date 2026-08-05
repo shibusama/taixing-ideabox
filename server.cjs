@@ -13,13 +13,9 @@ const { DatabaseSync } = require("node:sqlite");
 const PORT = parseInt(process.env.DEPLOY_RUN_PORT || "5000", 10);
 const ROOT = __dirname;
 const DIST = path.join(ROOT, "dist");
-const DB_PATH = path.join(ROOT, "server", "ideabox.db");
+const DB_PATH = path.join(ROOT, "ideabox.db");
 
 // ── Database ────────────────────────────────────────────────────────────────
-const serverDir = path.dirname(DB_PATH);
-if (!fs.existsSync(serverDir)) {
-  fs.mkdirSync(serverDir, { recursive: true });
-}
 const db = new DatabaseSync(DB_PATH);
 db.exec("PRAGMA journal_mode=WAL");
 db.exec("PRAGMA busy_timeout=5000");
