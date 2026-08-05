@@ -4,9 +4,18 @@ SQLAlchemy ORM models for IdeaBox.
 Compatible with both SQLite (local dev) and PostgreSQL (production).
 """
 
-from sqlalchemy import Column, String, Float, Boolean, Text
-from sqlalchemy.dialects.postgresql import JSONB
+import os
+
+from sqlalchemy import JSON, Column, String, Float, Boolean, Text
 from db import Base
+
+# JSONB on PostgreSQL (production); plain JSON on SQLite (local dev).
+if os.environ.get("PGDATABASE_URL"):
+    from sqlalchemy.dialects.postgresql import JSONB
+
+    JSONType = JSONB
+else:
+    JSONType = JSON
 
 
 class Idea(Base):
@@ -14,7 +23,7 @@ class Idea(Base):
 
     id = Column(String, primary_key=True)
     content = Column(Text, nullable=False)
-    tags = Column(JSONB, nullable=False, default=list)
+    tags = Column(JSONType, nullable=False, default=list)
     pinned = Column(Boolean, nullable=False, default=False)
     created_at = Column(Float, nullable=False)
     updated_at = Column(Float, nullable=False)
@@ -56,7 +65,7 @@ class Task(Base):
     task_id = Column(String, primary_key=True)
     url = Column(Text, nullable=False)
     status = Column(String, nullable=False, default="pending")
-    result = Column(JSONB, nullable=True)
+    result = Column(JSONType, nullable=True)
     error = Column(Text, nullable=True)
     created_at = Column(Float, nullable=False)
     updated_at = Column(Float, nullable=False)

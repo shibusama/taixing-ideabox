@@ -5,8 +5,20 @@ Uses PostgreSQL (Supabase) in production, SQLite in local development.
 """
 
 import os
+from pathlib import Path
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
+
+# Load server/.env if present (never overrides real env vars).
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 # Database URL from environment (PostgreSQL) or fallback to SQLite for local dev
 DATABASE_URL = os.environ.get("PGDATABASE_URL")
@@ -22,7 +34,6 @@ if DATABASE_URL:
     )
 else:
     # Local development: SQLite
-    from pathlib import Path
     DB_PATH = Path(__file__).parent / "ideabox.db"
     engine = create_engine(
         f"sqlite:///{DB_PATH}",
