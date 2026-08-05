@@ -269,6 +269,77 @@ def extract_media(work_dir, mp4_path, fps_interval):
     return audio, contact_sheet, media_info
 
 
+def _ensure_whisper_model(model_name: str) -> str:
+    """Ensure the whisper model is available locally.
+    
+    Tries to find the model in the huggingface cache first.
+    If not found, downloads from ModelScope (魔搭) and sets up the cache.
+    Returns the model path (a directory path if local, or the model name if already cached).
+    """
+    import os, shutil
+    
+    # Check if model_name is already a directory path
+    if os.path.isdir(model_name):
+        return model_name
+    
+    # Check huggingface cache
+    hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+    model_cache_dir = os.path.join(hf_home, "hub", f"models--systran--faster-whisper-{model_name}")
+    snapshots_dir = os.path.join(model_cache_dir, "snapshots")
+    if os.path.isdir(snapshots_dir):
+        snapshots = os.listdir(snapshots_dir)
+        if snapshots:
+            cached_path = os.path.join(snapshots_dir, snapshots[0])
+            if os.path.isdir(cached_path) and os.path.isfile(os.path.join(cached_path, "model.bin")):
+                return cached_path  # use local path directly
+    
+    # Not cached - download from ModelScope
+    try:
+        from modelscope.hub.snapshot_download import snapshot_download
+        modelscope_model_id = f"Systran/faster-whisper-{model_name}"
+        
+        print(f"[whisper] Downloading {model_name} from ModelScope...", file=sys.stderr)
+        ms_cache_dir = os.path.join(
+            os.environ.get("MODELSCOPE_CACHE", os.path.expanduser("~/.cache/modelscope"))
+        )
+        model_dir = snapshot_download(modelscope_model_id, cache_dir=ms_cache_dir)
+        print(f"[whisper] ModelScope download path: {model_dir}", file=sys.stderr)
+        
+        # Copy to huggingface cache structure
+        os.makedirs(model_cache_dir, exist_ok=True)
+        snapshots_dir = os.path.join(model_cache_dir, "snapshots")
+        os.makedirs(snapshots_dir, exist_ok=True)
+        
+        snapshot_hash = "modelscope_downloaded"
+        target_dir = os.path.join(snapshots_dir, snapshot_hash)
+        os.makedirs(target_dir, exist_ok=True)
+        
+        # Copy model files from the actual download path
+        for fname in os.listdir(model_dir):
+            src = os.path.join(model_dir, fname)
+            dst = os.path.join(target_dir, fname)
+            if not os.path.exists(dst):
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                elif os.path.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
+        
+        # Create refs/main so huggingface_hub can find the revision
+        refs_dir = os.path.join(model_cache_dir, "refs")
+        os.makedirs(refs_dir, exist_ok=True)
+        with open(os.path.join(refs_dir, "main"), "w") as f:
+            f.write(snapshot_hash)
+        
+        os.environ["HF_HOME"] = hf_home
+        
+        print(f"[whisper] Model cached at {target_dir}", file=sys.stderr)
+        return target_dir
+    except Exception as exc:
+        print(f"[whisper] ModelScope download failed: {exc}", file=sys.stderr)
+        print(f"[whisper] Falling back to model name: {model_name}", file=sys.stderr)
+        return model_name
+
+
 def transcribe(work_dir, audio, model_name, skip=False):
     if skip:
         return {"available": False, "skipped": True}
@@ -278,7 +349,8 @@ def transcribe(work_dir, audio, model_name, skip=False):
         return {"available": False, "error": f"faster-whisper unavailable: {exc}"}
 
     started = time.time()
-    model = WhisperModel(model_name, device="cpu", compute_type="int8")
+    model_path = _ensure_whisper_model(model_name)
+    model = WhisperModel(model_path, device="cpu", compute_type="int8", local_files_only=True)
     segments, info = model.transcribe(str(audio), language="zh", vad_filter=True, beam_size=5)
     rows = [
         {"start": round(seg.start, 2), "end": round(seg.end, 2), "text": seg.text.strip()}

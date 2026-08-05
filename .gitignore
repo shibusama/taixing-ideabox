@@ -6,6 +6,10 @@ server/ideabox.db
 server/__pycache__/
 server/.venv/
 
+# Cache directories
+.cache/
+__pycache__/
+
 # Preview files
 .preview
 .cozeproj/reduction
