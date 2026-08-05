@@ -1,46 +1,48 @@
-"""SQLite data layer via SQLAlchemy (sync engine).
+"""
+Database connection and session management.
 
-DB file: ideabox.db (fixed name). The backend process owns it; because this
-environment's safe-delete wrapper can block *file deletion* (not writes),
-we never delete/replace the db file — we only write rows inside it.
+Uses PostgreSQL (Supabase) in production, SQLite in local development.
 """
 
-import pathlib
+import os
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker
+# Database URL from environment (PostgreSQL) or fallback to SQLite for local dev
+DATABASE_URL = os.environ.get("COZE_SUPABASE_URL")
 
-BASE_DIR = pathlib.Path(__file__).parent
-DB_PATH = BASE_DIR / "ideabox.db"
+if DATABASE_URL:
+    # Production: PostgreSQL (Supabase)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=5,
+        max_overflow=10,
+        pool_timeout=30,
+        pool_recycle=3600,
+    )
+else:
+    # Local development: SQLite
+    from pathlib import Path
+    DB_PATH = Path(__file__).parent / "ideabox.db"
+    engine = create_engine(
+        f"sqlite:///{DB_PATH}",
+        connect_args={"check_same_thread": False},
+    )
+    # SQLite WAL mode for better concurrent read performance
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.close()
 
-engine = create_engine(
-    f"sqlite:///{DB_PATH}",
-    connect_args={"check_same_thread": False},
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-
-def _on_connect(dbapi_conn, _record):
-    """WAL mode + busy timeout: allow concurrent readers/writers."""
-    cur = dbapi_conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("PRAGMA busy_timeout=5000")
-    cur.execute("PRAGMA foreign_keys=ON")
-    cur.close()
-
-
-from sqlalchemy import event  # noqa: E402
-
-event.listen(engine, "connect", _on_connect)
-
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-
-
-class Base(DeclarativeBase):
-    pass
+Base = declarative_base()
 
 
 def init_db():
-    """Create all tables (idempotent)."""
-    import models  # noqa: F401 - register models on Base.metadata
-
-    Base.metadata.create_all(bind=engine)
+    """Create tables if they don't exist (SQLite only; Supabase tables are created manually)."""
+    if not DATABASE_URL:
+        Base.metadata.create_all(bind=engine)
