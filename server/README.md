@@ -52,10 +52,20 @@ python -m venv .venv            # 首次
 
 ## 依赖 skill
 
-后端依赖用户已有的 Codex skill 脚本：
-`C:\Users\13191\.codex\skills\video-link-summarizer\scripts\prepare_video.py`
+后端解析视频需要 `prepare_video.py`（视频号/抖音链接 → 下载/转写）。位置解析：
 
-系统依赖：`ffmpeg` / `ffprobe`（已在 PATH）。转写可选装 `faster-whisper`（未装时跳过转写，导图仅基于元信息）。
+1. 环境变量 `SKILL_SCRIPT_PATH`（Linux 部署推荐，可指向任意路径）
+2. 默认回退到仓库内副本 `server/skills/prepare_video.py`（已随仓库提交，开箱即用）
+3. 本地开发时如用 Codex skill 原版，可设 `SKILL_SCRIPT_PATH=C:\Users\...\.codex\skills\video-link-summarizer\scripts\prepare_video.py`
+
+系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写可选装 `faster-whisper`（未装时跳过转写，导图仅基于元信息）。
+
+## 前端 API 地址配置
+
+前端 `src/config.js` 按优先级解析后端地址：
+1. `window.APP_CONFIG.apiBase`（生产最灵活：在 index.html 里注入，改一行即可切换后端）
+2. `VITE_API_BASE` 环境变量（Vite 构建期）
+3. 默认：开发环境 `http://127.0.0.1:8000`；生产环境同源 `/api`（由 Nginx 反代）
 
 ## 启用 LLM 思维导图（可选）
 

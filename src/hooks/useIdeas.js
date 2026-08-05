@@ -1,8 +1,7 @@
 // Ideas management hook - CRUD operations backed by the FastAPI server (SQLite)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { extractTags } from '../utils/helpers'
-
-const API_BASE = 'http://127.0.0.1:8000'
+import { API_BASE } from '../config'
 
 async function api(path, options = {}) {
   const resp = await fetch(`${API_BASE}${path}`, {

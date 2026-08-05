@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Transformer } from 'markmap-lib'
 import { Markmap } from 'markmap-view'
+import { API_BASE } from '../config'
 
 const transformer = new Transformer()
-const API_BASE = 'http://127.0.0.1:8000'
 
 export default function VideoMindmap() {
   const [url, setUrl] = useState('')

@@ -12,6 +12,7 @@ Pipeline (unchanged):
 
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import sys
@@ -30,8 +31,12 @@ from db import SessionLocal, init_db
 from models import Idea, Mindmap, Tag, Task
 
 BASE_DIR = pathlib.Path(__file__).parent
+
+# prepare_video.py 位置：优先用环境变量 SKILL_SCRIPT_PATH（Linux 部署用），
+# 否则回退到 server/skills/prepare_video.py（随仓库部署的副本）。
+_default_skill_script = BASE_DIR / "skills" / "prepare_video.py"
 SKILL_SCRIPT = pathlib.Path(
-    r"C:\Users\13191\.codex\skills\video-link-summarizer\scripts\prepare_video.py"
+    os.environ.get("SKILL_SCRIPT_PATH", str(_default_skill_script))
 )
 WORK_ROOT = BASE_DIR / "work"
 LEGACY_CACHE_DIR = BASE_DIR / "cache"
