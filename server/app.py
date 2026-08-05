@@ -38,9 +38,9 @@ _default_skill_script = BASE_DIR / "skills" / "prepare_video.py"
 SKILL_SCRIPT = pathlib.Path(
     os.environ.get("SKILL_SCRIPT_PATH", str(_default_skill_script))
 )
-WORK_ROOT = BASE_DIR / "work"
+WORK_ROOT = pathlib.Path(os.environ.get("WORK_ROOT", str(BASE_DIR / "work")))
 LEGACY_CACHE_DIR = BASE_DIR / "cache"
-WORK_ROOT.mkdir(exist_ok=True)
+WORK_ROOT.mkdir(parents=True, exist_ok=True)
 
 init_db()
 
