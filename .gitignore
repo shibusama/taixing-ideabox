@@ -10,7 +10,16 @@ server/.venv/
 .cache/
 __pycache__/
 
+# Build output
+dist/
+
 # Preview files
 .preview
 .cozeproj/reduction
 .codegraph
+
+# Root-level SQLite (should only be in server/)
+/ideabox.db*
+
+# Temporary screenshots
+assets/

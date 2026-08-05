@@ -34,7 +34,7 @@ SQLite 持久化（mindmaps 表，按 URL sha256 缓存，重复解析秒回）
 
 前端数据从 LocalStorage 迁移到后端 API（`src/hooks/useIdeas.js`），首次加载时若数据库为空且浏览器仍有旧 LocalStorage 数据会自动导入一次。
 
-旧文件缓存迁移（一次性）：`.venv/Scripts/python.exe migrate_cache.py`（幂等，可重复跑）。
+
 
 ## 启动
 
@@ -114,10 +114,12 @@ server/
 ├── app.py               # FastAPI 入口（任务管理 + 数据 API）
 ├── db.py                # SQLAlchemy engine / session / init
 ├── models.py            # 4 张表模型（Idea/Tag/Mindmap/Task）
-├── llm.py               # LLM 接口位（none / openai-compatible / siliconflow）
-├── migrate_cache.py     # 一次性：旧 cache/*.json → mindmaps 表
+├── llm.py               # LLM 接口（none / openai-compatible / siliconflow）
+├── regenerate_mindmaps.py  # 思维导图重生成脚本
 ├── requirements.txt
 ├── ideabox.db           # SQLite 数据库（自动创建）
-├── cache/               # 旧版文件缓存（已废弃，迁移后可删除）
-└── work/                # prepare_video.py 中间产物（按 URL sha256）
+├── start.sh             # 启动脚本
+├── README.md            # 本文档
+└── skills/
+    └── prepare_video.py # 视频解析技能脚本
 ```

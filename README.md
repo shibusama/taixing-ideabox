@@ -23,8 +23,7 @@
 │   │   ├── SearchBar.jsx   # 搜索栏
 │   │   └── EmptyState.jsx  # 空状态
 │   ├── hooks/              # 自定义 Hooks
-│   │   ├── useIdeas.js     # 灵感 CRUD（调 API）
-│   │   └── useLocalStorage.js # LocalStorage 工具
+│   │   └── useIdeas.js     # 灵感 CRUD（调 API）
 │   ├── utils/helpers.js    # 工具函数
 │   ├── data/tags.js        # 标签颜色配置
 │   ├── config.js           # 前端配置（API 地址等）
@@ -38,8 +37,8 @@
 │   ├── llm.py              # LLM 接口（可选）
 │   ├── requirements.txt    # Python 依赖
 │   ├── start.sh            # 启动脚本
+│   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   └── skills/             # 视频解析技能脚本
-├── dist/                   # 构建产物（提交到 Git）
 ├── .coze                   # 部署配置
 ├── build-and-commit.sh     # 构建 + 提交脚本
 └── package.json            # 前端依赖
