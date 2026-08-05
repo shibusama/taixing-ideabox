@@ -1,4 +1,4 @@
-export default function Header({ onToggleSidebar, sidebarOpen }) {
+export default function Header({ onToggleSidebar, sidebarOpen, view, onViewChange }) {
   return (
     <header className="sticky top-0 z-30 bg-pop-yellow border-b-4 border-pop-black">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -43,6 +43,40 @@ export default function Header({ onToggleSidebar, sidebarOpen }) {
 
           {/* Right side */}
           <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="flex items-center border-2 border-pop-black shadow-pop-sm bg-white">
+              <button
+                onClick={() => onViewChange('list')}
+                className={`p-2 transition-colors ${view === 'list' ? 'bg-pop-blue text-white' : 'bg-white text-pop-black hover:bg-pop-yellow'}`}
+                aria-label="列表视图"
+                title="列表视图"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+                </svg>
+              </button>
+              <button
+                onClick={() => onViewChange('board')}
+                className={`p-2 transition-colors ${view === 'board' ? 'bg-pop-blue text-white' : 'bg-white text-pop-black hover:bg-pop-yellow'}`}
+                aria-label="看板视图"
+                title="看板视图"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 4a1 1 0 011-1h6a1 1 0 011 1v16a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM13 4a1 1 0 011-1h6a1 1 0 011 1v10a1 1 0 01-1 1h-6a1 1 0 01-1-1V4z" />
+                </svg>
+              </button>
+              <button
+                onClick={() => onViewChange('video')}
+                className={`p-2 transition-colors ${view === 'video' ? 'bg-pop-blue text-white' : 'bg-white text-pop-black hover:bg-pop-yellow'}`}
+                aria-label="视频导图"
+                title="视频导图"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
+            </div>
+
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold font-mono bg-white border-2 border-pop-black px-2.5 py-1 shadow-pop-sm">
               <span className="w-2 h-2 bg-pop-green border border-pop-black" />
               <span>SAVED LOCALLY</span>

@@ -10,6 +10,8 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
+    "markmap-lib": "^0.18.12",
+    "markmap-view": "^0.18.12",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

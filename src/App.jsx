@@ -2,6 +2,8 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import Header from './components/Header'
 import IdeaInput from './components/IdeaInput'
 import IdeaList from './components/IdeaList'
+import BoardView from './components/BoardView'
+import VideoMindmap from './components/VideoMindmap'
 import Sidebar from './components/Sidebar'
 import SearchBar from './components/SearchBar'
 import EmptyState from './components/EmptyState'
@@ -17,6 +19,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedTag, setSelectedTag] = useState(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [view, setView] = useState('list')
   const [toast, setToast] = useState(null)
   const toastTimer = useRef(null)
 
@@ -55,24 +58,28 @@ export default function App() {
     })
   }, [ideas, searchQuery, selectedTag])
 
-  const handleExport = useCallback(() => {
-    const data = exportData()
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `ideabox-${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-    showToast('数据已导出!')
+  const handleExport = useCallback(async () => {
+    try {
+      const data = await exportData()
+      const blob = new Blob([data], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `ideabox-${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      showToast('数据已导出!')
+    } catch (err) {
+      showToast('导出失败: ' + err.message)
+    }
   }, [exportData, showToast])
 
-  const handleImport = useCallback((e) => {
+  const handleImport = useCallback(async (e) => {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (event) => {
-      const success = importData(event.target.result)
+    reader.onload = async (event) => {
+      const success = await importData(event.target.result)
       showToast(success ? '导入成功!' : '导入失败!')
     }
     reader.readAsText(file)
@@ -83,6 +90,29 @@ export default function App() {
     setSearchQuery('')
     setSelectedTag(null)
   }, [])
+
+  // Board view: drag card to a tag column -> add that tag
+  const handleAddTag = useCallback((id, tag) => {
+    const idea = ideas.find(i => i.id === id)
+    if (!idea || idea.tags.includes(tag)) return
+    updateIdea(id, { tags: [...idea.tags, tag] })
+    showToast(`已添加标签 #${tag}`)
+  }, [ideas, updateIdea, showToast])
+
+  // Board view: drag card to untagged column -> clear all tags (with undo)
+  const handleClearTags = useCallback((id) => {
+    const idea = ideas.find(i => i.id === id)
+    if (!idea || idea.tags.length === 0) return
+    const prevTags = idea.tags
+    updateIdea(id, { tags: [] })
+    showToast('已移除全部标签', {
+      label: '撤销',
+      onClick: () => {
+        updateIdea(id, { tags: prevTags })
+        setToast(null)
+      },
+    })
+  }, [ideas, updateIdea, showToast])
 
   useEffect(() => {
     const handler = (e) => {
@@ -100,7 +130,12 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <div className="relative">
-        <Header onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} sidebarOpen={sidebarOpen} />
+        <Header
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+          sidebarOpen={sidebarOpen}
+          view={view}
+          onViewChange={setView}
+        />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex gap-8">
@@ -124,7 +159,11 @@ export default function App() {
             </div>
 
             {/* Main content */}
-            <main className="flex-1 min-w-0 max-w-3xl mx-auto lg:mx-0">
+            <main className={`flex-1 min-w-0 mx-auto lg:mx-0 ${view === 'video' ? 'max-w-5xl' : 'max-w-3xl'}`}>
+              {view === 'video' ? (
+                <VideoMindmap />
+              ) : (
+                <>
               {/* Quick capture */}
               <div className="mb-6">
                 <IdeaInput onAdd={addIdea} />
@@ -175,6 +214,16 @@ export default function App() {
                   selectedTag={selectedTag}
                   onClearFilters={clearFilters}
                 />
+              ) : view === 'board' ? (
+                <BoardView
+                  ideas={filteredIdeas}
+                  onEdit={updateIdea}
+                  onDelete={handleDelete}
+                  onTogglePin={togglePin}
+                  onAddTag={handleAddTag}
+                  onClearTags={handleClearTags}
+                  searchQuery={searchQuery}
+                />
               ) : (
                 <IdeaList
                   ideas={filteredIdeas}
@@ -183,6 +232,8 @@ export default function App() {
                   onTogglePin={togglePin}
                   searchQuery={searchQuery}
                 />
+              )}
+                </>
               )}
             </main>
           </div>
