@@ -8,3 +8,5 @@ server/.venv/
 
 # Preview files
 .preview
+.cozeproj/reduction
+.codegraph
