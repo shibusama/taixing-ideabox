@@ -10,9 +10,6 @@ server/.venv/
 .cache/
 __pycache__/
 
-# Build output
-dist/
-
 # Preview files
 .preview
 .cozeproj/reduction

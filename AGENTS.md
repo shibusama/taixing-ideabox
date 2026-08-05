@@ -68,10 +68,11 @@ pnpm run build
 
 ## 部署架构
 - `.coze` 配置：`requires = ["python-312"]`（Python 运行时）
+- `dist/` 已构建并提交到 Git，部署时无需前端构建
 - 部署流程：
-  1. `build` → `sh build.sh` → `pnpm install && pnpm run build`（生成 `dist/`）
-  2. `run` → `sh start.sh` → `cd server && uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
-- 服务端 `server/app.py` 使用 FastAPI + SQLite，统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
+  1. `build` → `pip install -r server/requirements.txt`（安装 Python 依赖）
+  2. `run` → `sh server/start.sh` → `cd server && uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
+- 服务端 `server/app.py` 使用 FastAPI + SQLite/PostgreSQL，统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法
