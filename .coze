@@ -7,4 +7,4 @@ run = ["pnpm", "run", "dev"]
 
 [deploy]
 build = ["pnpm", "install"]
-run = ["sh", "-c", "pnpm run build && npx serve dist -l ${DEPLOY_RUN_PORT}"]
+run = ["sh", "start.sh"]
