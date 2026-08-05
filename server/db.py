@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 # Database URL from environment (PostgreSQL) or fallback to SQLite for local dev
-DATABASE_URL = os.environ.get("COZE_SUPABASE_URL")
+DATABASE_URL = os.environ.get("PGDATABASE_URL")
 
 if DATABASE_URL:
     # Production: PostgreSQL (Supabase)
