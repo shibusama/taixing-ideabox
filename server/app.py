@@ -571,6 +571,19 @@ def health():
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Serve built frontend (production) — mount AFTER all API routes
+# ---------------------------------------------------------------------------
+try:
+    from fastapi.staticfiles import StaticFiles
+
+    dist_dir = BASE_DIR.parent / "dist"
+    if dist_dir.exists():
+        app.mount("/", StaticFiles(directory=str(dist_dir), html=True), name="frontend")
+        print(f"[deploy] frontend mounted from {dist_dir}", file=sys.stderr)
+except Exception as exc:
+    print(f"[deploy] frontend mount skipped: {exc}", file=sys.stderr)
+
 if __name__ == "__main__":
     import uvicorn
 
