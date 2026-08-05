@@ -11,6 +11,7 @@ Usage: .venv/Scripts/python.exe regenerate_mindmaps.py [url_hash ...]
 
 import importlib.util
 import json
+import os
 import pathlib
 import sys
 import time
@@ -20,9 +21,11 @@ from db import SessionLocal
 from models import Mindmap
 
 BASE_DIR = pathlib.Path(__file__).parent
-WORK_ROOT = BASE_DIR / "work"
+WORK_ROOT = pathlib.Path(os.environ.get("WORK_ROOT", str(BASE_DIR / "work")))
+# prepare_video.py 位置：优先环境变量 SKILL_SCRIPT_PATH，否则仓库内副本。
+_default_skill_script = BASE_DIR / "skills" / "prepare_video.py"
 SKILL_SCRIPT = pathlib.Path(
-    r"C:\Users\13191\.codex\skills\video-link-summarizer\scripts\prepare_video.py"
+    os.environ.get("SKILL_SCRIPT_PATH", str(_default_skill_script))
 )
 
 spec = importlib.util.spec_from_file_location("prepare_video", SKILL_SCRIPT)

@@ -87,11 +87,6 @@ def _rebuild_tags(db):
     db.add_all([Tag(name=n, count=c) for n, c in counts.items()])
 
 
-def _sync_tags_from_idea(db, idea):
-    """Incremental tag sync for a single idea change (recompute cheaply)."""
-    _rebuild_tags(db)
-
-
 def _migrate_legacy_data():
     """One-time rescue: if the current DB is empty, import from a legacy backup.
 

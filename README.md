@@ -5,7 +5,7 @@
 ## 技术栈
 
 - **前端**：React 18 + Vite 6 + Tailwind CSS 3
-- **后端**：Python FastAPI + SQLite
+- **后端**：Python FastAPI + PostgreSQL（生产）/ SQLite（本地开发）
 - **部署**：Coze 平台（Python 单运行时）
 
 ## 目录结构
@@ -110,4 +110,4 @@ sh build-and-commit.sh
 
 ## 数据存储
 
-数据存储在 `server/ideabox.db`（SQLite），首次启动时自动创建。
+本地开发使用 `server/ideabox.db`（SQLite，首次启动自动建表）；生产环境（Coze 部署）通过环境变量 `PGDATABASE_URL` 连接 PostgreSQL。数据访问一律通过后端 API，前端不直接读写数据库。

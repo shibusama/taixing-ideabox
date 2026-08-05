@@ -1,10 +1,5 @@
 // Utility functions for the IdeaBox app
 
-// Generate a unique ID
-export function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 8)
-}
-
 // Format relative time in Chinese
 export function formatRelativeTime(timestamp) {
   const now = Date.now()
@@ -35,12 +30,6 @@ export function formatFullDate(timestamp) {
   const h = String(date.getHours()).padStart(2, '0')
   const min = String(date.getMinutes()).padStart(2, '0')
   return `${y}-${m}-${d} ${h}:${min}`
-}
-
-// Get today's date key (YYYY-MM-DD)
-export function getTodayKey() {
-  const now = new Date()
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 }
 
 // Check if timestamp is today
@@ -82,14 +71,6 @@ export function highlightMatch(text, query) {
   if (!query || !query.trim()) return text
   const regex = new RegExp(`(${query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')
   return text.replace(regex, '<mark class="bg-pop-yellow text-pop-black px-0.5" style="font-weight:700">$1</mark>')
-}
-
-// Count words/characters
-export function getTextStats(text) {
-  const stripped = stripTags(text)
-  const chars = stripped.length
-  const words = stripped.trim() ? stripped.trim().split(/\s+/).length : 0
-  return { chars, words }
 }
 
 // Group ideas by date

@@ -1,6 +1,6 @@
 # 灵感匣后端 (server/)
 
-灵感匣「视频链接 → 思维导图」功能 + 数据存储后端，FastAPI + SQLite (SQLAlchemy)。
+灵感匣「视频链接 → 思维导图」功能 + 数据存储后端，FastAPI + SQLAlchemy（PostgreSQL 生产 / SQLite 本地）。
 
 ## 架构
 
@@ -13,17 +13,22 @@
 FastAPI (server/app.py)
    │  调用 skill 脚本 prepare_video.py
    ▼
-解析管线（下载 MP4 → 提取音频/关键帧 → faster-whisper 转写）
-   │  产出 low_cost_material.json / transcript_preview.txt
+解析管线（下载 MP4 → 提取音频 → Coze 云 ASR 转写）
+   │  产出 transcript.txt / transcript.json
    ▼
 LLM 生成思维导图 Markdown（markmap 格式）   ← 未配置 key 时用模板
    ▼
-SQLite 持久化（mindmaps 表，按 URL sha256 缓存，重复解析秒回）
+数据库持久化（mindmaps 表，按 URL sha256 缓存，重复解析秒回）
 ```
 
-## 数据存储（SQLite）
+## 数据存储
 
-所有业务数据存在 `server/ideabox.db`（首次启动自动建表），4 张表：
+| 环境 | 数据库 | 配置方式 |
+|------|--------|----------|
+| 本地开发 | SQLite（`server/ideabox.db`，首次启动自动建表） | 无 `PGDATABASE_URL` 时默认 |
+| 生产（Coze） | PostgreSQL | 环境变量 `PGDATABASE_URL` |
+
+4 张表：
 
 | 表 | 用途 | 说明 |
 |----|------|------|
@@ -32,40 +37,40 @@ SQLite 持久化（mindmaps 表，按 URL sha256 缓存，重复解析秒回）
 | `mindmaps` | 视频导图缓存 | 替代旧 `cache/*.json`，url_hash 唯一索引 |
 | `tasks` | 解析任务状态 | 持久化，服务重启后 pending/running 置为 error |
 
+> PostgreSQL 表需手动建表（`Base.metadata.create_all()`，仅 SQLite 自动建）。本地和线上连同一个库才能共享数据。
+
 前端数据从 LocalStorage 迁移到后端 API（`src/hooks/useIdeas.js`），首次加载时若数据库为空且浏览器仍有旧 LocalStorage 数据会自动导入一次。
-
-
 
 ## 启动
 
 ```bash
 cd server
-python -m venv .venv            # 首次
-./.venv/Scripts/pip install -r requirements.txt   # 首次
-./.venv/Scripts/python -m uvicorn app:app --host 127.0.0.1 --port 8000
+pip install -r requirements.txt
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-> ℹ️ **关于 safe-delete**：本环境的 safe-delete 包装只拦截「删除文件」操作（rm/覆盖已存在文件），
-> **SQLite 行级写入不受影响**。因此数据库固定使用 `server/ideabox.db`（由后端进程创建后持续写入），
-> 无需每次换库名。唯一注意点：**不要在后端运行期间手动删/覆盖 ideabox.db 文件本身**；
-> 数据操作一律通过后端 API。导图重生成走内部端点：`POST /api/admin/regenerate-mindmaps`。
+后端会自动读取 `server/.env`（若存在）注入环境变量，无需手动设置。`.env` 已 gitignore，**不要提交密钥**。常用变量：
+
+```bash
+# 连接 PostgreSQL（不设则回退 SQLite）
+PGDATABASE_URL=postgresql://user:pass@host:5432/db
+```
 
 ## 依赖 skill
 
 后端解析视频需要 `prepare_video.py`（视频号/抖音链接 → 下载/转写）。位置解析：
 
-1. 环境变量 `SKILL_SCRIPT_PATH`（Linux 部署推荐，可指向任意路径）
+1. 环境变量 `SKILL_SCRIPT_PATH`（可指向任意路径）
 2. 默认回退到仓库内副本 `server/skills/prepare_video.py`（已随仓库提交，开箱即用）
-3. 本地开发时如用 Codex skill 原版，可设 `SKILL_SCRIPT_PATH=C:\Users\...\.codex\skills\video-link-summarizer\scripts\prepare_video.py`
 
-系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写可选装 `faster-whisper`（未装时跳过转写，导图仅基于元信息）。
+系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写使用 **Coze 平台云 ASR**（`coze_coding_dev_sdk.ASRClient`，仅 Coze 环境可用），无需本地下载模型。
 
 ## 前端 API 地址配置
 
 前端 `src/config.js` 按优先级解析后端地址：
 1. `window.APP_CONFIG.apiBase`（生产最灵活：在 index.html 里注入，改一行即可切换后端）
 2. `VITE_API_BASE` 环境变量（Vite 构建期）
-3. 默认：开发环境 `http://127.0.0.1:8000`；生产环境同源 `/api`（由 Nginx 反代）
+3. 默认：开发环境 `http://127.0.0.1:8000`；生产环境同源 `/api`（由后端统一服务）
 
 ## 启用 LLM 思维导图（可选）
 
@@ -73,7 +78,7 @@ python -m venv .venv            # 首次
 要启用 AI 深度分析导图，创建 `server/.env`（已 gitignore，注意**不要提交 key**）：
 
 ```bash
-# 硅基流动（当前已配置，模型 DeepSeek-V4-Flash）
+# 硅基流动
 LLM_PROVIDER=siliconflow
 LLM_API_KEY=sk-xxx
 LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash
@@ -85,8 +90,7 @@ LLM_API_KEY=sk-xxx
 LLM_MODEL=your-model
 ```
 
-> 备注：早期使用 Qwen/Qwen2.5-7B-Instruct 时发现该免费模型在硅基流动上输出大量乱码，
-> 已切换为 deepseek-ai/DeepSeek-V4-Flash（输出干净、质量好）。
+> 默认 `LLM_MODEL` 为 `Qwen/Qwen2.5-7B-Instruct`（`server/llm.py`）。早期使用该免费模型时发现输出大量乱码，建议配置 `DeepSeek-V4-Flash` 等更稳定的模型。
 
 ## API
 
@@ -112,13 +116,14 @@ LLM_MODEL=your-model
 ```
 server/
 ├── app.py               # FastAPI 入口（任务管理 + 数据 API）
-├── db.py                # SQLAlchemy engine / session / init
-├── models.py            # 4 张表模型（Idea/Tag/Mindmap/Task）
+├── db.py                # SQLAlchemy engine / session / init（读取 server/.env）
+├── models.py            # 4 张表模型（Idea/Tag/Mindmap/Task，JSONB/JSON 按环境切换）
 ├── llm.py               # LLM 接口（none / openai-compatible / siliconflow）
-├── regenerate_mindmaps.py  # 思维导图重生成脚本
+├── regenerate_mindmaps.py  # 思维导图重生成脚本（SKILL_SCRIPT_PATH 或仓库内副本）
 ├── requirements.txt
-├── ideabox.db           # SQLite 数据库（自动创建）
-├── start.sh             # 启动脚本
+├── ideabox.db           # SQLite 数据库（自动创建，已 gitignore）
+├── .env                 # 环境变量（本地，已 gitignore，不提交）
+├── start.sh             # 启动脚本（Coze 部署用）
 ├── README.md            # 本文档
 └── skills/
     └── prepare_video.py # 视频解析技能脚本
