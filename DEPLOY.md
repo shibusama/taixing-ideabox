@@ -72,6 +72,23 @@ git push
 | **`server/` 目录只读** | `WORK_ROOT` 必须指向可写目录（默认 `/tmp/ideabox/work`） |
 | **视频号解析依赖 HY_TOKEN + 非官方接口** | `/api/sph/resolve` 走元宝 + 微信频道接口，HY_TOKEN 未配置会返回 400 |
 | **前端产物大（868KB）** | Vite 有 chunk 警告，属正常，暂不影响功能 |
+| **OCR 需要系统 tesseract** | 图片/音乐视频的 OCR 功能依赖系统 tesseract + 中文语言包，见下方"OCR 部署" |
+
+### OCR 部署（图片/背景音乐视频的文字提取）
+
+视频无语音时，后端会用 OCR 从关键帧提取图片文字。**依赖系统 tesseract**：
+
+```bash
+# Ubuntu / Debian（Coze 沙箱若基于此类镜像）
+apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
+
+# 若 tesseract 不在 PATH，代码会尝试常见安装路径
+# 语言包需含 chi_sim（中文）才能识别中文图片文字
+```
+
+- Python 依赖 `pytesseract` + `Pillow` 已加入 `server/requirements.txt`
+- **未装 tesseract 不影响主流程**：OCR 自动跳过，视频导图照常工作（优雅降级）
+- 本地 Windows 装法：winget 装 Tesseract-OCR，再下载 `chi_sim.traineddata` 放入 tessdata 目录
 
 ## 五、本地 vs 生产差异速查
 
@@ -81,4 +98,5 @@ git push
 | 前端 | FastAPI 托管 `dist/`（单进程） | `dist/` 静态文件（后端挂载） |
 | 视频 ASR | ❌ 无 SDK | ✅ 平台内建 |
 | 视频号解析 | 需本地 `.env` 配 `HY_TOKEN` | 环境变量 `HY_TOKEN` |
+| OCR | 需装 tesseract + chi_sim 语言包 | 需 apt 装 tesseract-ocr-chi-sim |
 | 启动 | `start-server.bat` / `start-dev.sh` | `sh server/start.sh` |
