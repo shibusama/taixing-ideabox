@@ -18,5 +18,5 @@ __pycache__/
 # Root-level SQLite (should only be in server/)
 /ideabox.db*
 
-# Temporary screenshots
-assets/
+# Root-level temporary screenshots (NOT dist/assets, which must be committed)
+/assets/
