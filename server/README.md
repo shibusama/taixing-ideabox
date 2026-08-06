@@ -47,6 +47,7 @@ LLM 生成思维导图 Markdown（markmap 格式）   ← 未配置 key 时用�
 cd server
 pip install -r requirements.txt
 python -m uvicorn app:app --host 127.0.0.1 --port 8000
+# → http://127.0.0.1:8000/api/health（同源托管前端 dist/，单进程）
 ```
 
 后端会自动读取 `server/.env`（若存在）注入环境变量，无需手动设置。`.env` 已 gitignore，**不要提交密钥**。常用变量：

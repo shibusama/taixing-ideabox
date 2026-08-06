@@ -46,15 +46,25 @@
 
 ## 本地开发
 
-### 前端（热更新）
+### 一键启动（单进程，同源，与生产一致）
 
 ```bash
 pnpm install
-pnpm run dev
-# → http://localhost:5173
+pip install -r server/requirements.txt
+sh start-dev.sh        # 可选指定端口：sh start-dev.sh 8000
+# → http://localhost:8000  （前端 + /api 由同一 FastAPI 进程托管）
 ```
 
-### 后端
+`start-dev.sh` 会按需安装前后端依赖、构建前端到 `dist/`，然后单进程启动后端并托管前端静态文件。开发期间改前端代码需重新 `pnpm run build` 或运行 `pnpm run dev` 走 Vite（见下）。
+
+### 前端热更新（可选）
+
+```bash
+pnpm run dev
+# → http://localhost:5173 （Vite dev server，/api 代理到 http://127.0.0.1:8000）
+```
+
+### 仅后端
 
 ```bash
 cd server
@@ -65,10 +75,7 @@ python -m uvicorn app:app --reload --port 8000
 
 ### 开发模式说明
 
-本地开发时，前后端分离运行：
-
-- 前端（Vite）：端口 5173，热更新，调 `http://localhost:8000/api`
-- 后端（FastAPI）：端口 8000，处理 API 请求
+开发与生产统一为**单进程同源**：FastAPI 同时提供 `/api/*` 与前端静态文件（`dist/`）。前端 `API_BASE` 恒为空字符串，请求自带 `/api` 前缀，无需 Vite 代理。可选地，`pnpm run dev` 仍提供 Vite 热更新，其 `/api` 代理指向本地后端。
 
 ## 构建与部署
 
