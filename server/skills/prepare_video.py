@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import json
+import os
 import pathlib
 import re
 import shutil
@@ -91,7 +92,118 @@ def detect_platform(url):
     raise ValueError("unsupported URL platform")
 
 
+def _sph_rid():
+    import random
+
+    ts = f"{int(time.time()):x}"
+    rand = "".join(random.choice("0123456789abcdef") for _ in range(8))
+    return f"{ts}-{rand}"
+
+
+# 元宝解析（优先使用，替代不可靠的第三方 sph.litao.workers.dev）
+# 逻辑与 server/app.py 的 /api/sph/resolve 一致：分享链接 → 元宝换取 exportId/token → 微信频道换取 videoUrl
+_SPH_PARSE_URL = "https://yuanbao.tencent.com/api/weixin/get_parse_result"
+_SPH_FEED_URL = "https://channels.weixin.qq.com/finder-preview/api/feed/get_feed_info"
+_SPH_PAGE_URL = "https%3A%2F%2Fchannels.weixin.qq.com%2Ffinder-preview%2Fpages%2Ffeed"
+_SPH_REFERER = "https://yuanbao.tencent.com/chat/naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1"
+_SPH_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+)
+
+
+def _sph_parse_share_url(share_url, cookie):
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "origin": "https://yuanbao.tencent.com",
+        "referer": _SPH_REFERER,
+        "user-agent": _SPH_UA,
+        "t-userid": "b9575f6b0a8c4a55a08096904a5ef20a",
+        "x-agentid": "naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1",
+        "x-device-id": "1921b001708100d7fa31002b9646bd0cc15a3e2e1f",
+        "x-hy92": "e963067ffa31002b9646bd0c03000008b1951a",
+        "x-hy93": "1921b001708100d7fa31002b9646bd0cc15a3e2e1f",
+        "x-id": "b9575f6b0a8c4a55a08096904a5ef20a",
+        "x-platform": "mac",
+        "x-source": "web",
+        "x-webversion": "2.69.0",
+        "cookie": cookie,
+    }
+    payload = {"type": "video_channel_url", "url": share_url, "scene": 1}
+    return request_json(_SPH_PARSE_URL, method="POST", payload=payload, headers=headers, timeout=15)
+
+
+def _sph_get_feed_info(export_id, general_token):
+    rid = _sph_rid()
+    referer = (
+        "https://channels.weixin.qq.com/finder-preview/pages/feed"
+        f"?entry_card_type=48&comment_scene=39&appid=0&token={general_token}"
+        f"&entry_scene=0&eid={export_id}"
+    )
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "origin": "https://channels.weixin.qq.com",
+        "referer": referer,
+        "user-agent": _SPH_UA,
+    }
+    api_url = f"{_SPH_FEED_URL}?_rid={rid}&_pageUrl={_SPH_PAGE_URL}"
+    payload = {"baseReq": {"generalToken": general_token}, "exportId": export_id}
+    return request_json(api_url, method="POST", payload=payload, headers=headers, timeout=15)
+
+
+def _parse_wechat_yuanbao(url):
+    """用腾讯元宝解析视频号链接（需 HY_TOKEN cookie）。返回 video_url / feedInfo / authorInfo 或抛异常。"""
+    cookie = os.environ.get("HY_TOKEN", "")
+    if not cookie:
+        raise RuntimeError("HY_TOKEN 未配置")
+    parse = _sph_parse_share_url(url, cookie)
+    data = parse.get("data") or {}
+    export_id = data.get("wx_export_id", "")
+    playable = data.get("playable_url") or ""
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(playable).query)
+    general_token = (qs.get("token") or [""])[0]
+    eid = (qs.get("eid") or [""])[0] or export_id
+    feed = _sph_get_feed_info(eid, general_token)
+    feed_data = feed.get("data") or {}
+    feed_info = feed_data.get("feedInfo") or {}
+    return {
+        "video_url": feed_info.get("videoUrl") or feed_info.get("originVideoUrl") or "",
+        "author": (feed_data.get("authorInfo") or {}).get("nickname") or "",
+        "description": feed_info.get("description") or "",
+    }
+
+
 def parse_wechat(url, work_dir):
+    # 优先走元宝解析（自有逻辑，可靠），失败/无 token 时回退第三方服务
+    yuanbao_meta = None
+    try:
+        yuanbao_meta = _parse_wechat_yuanbao(url)
+    except Exception as exc:
+        print(f"[parse_wechat] yuanbao parse failed, fallback to third-party: {exc}", file=sys.stderr)
+
+    if yuanbao_meta and yuanbao_meta.get("video_url"):
+        video_url = yuanbao_meta["video_url"]
+        # 尝试写入 profile.json 以便后续复用（元宝解析拿不到完整 feedInfo）
+        (work_dir / "profile.json").write_text(
+            json.dumps({"data": {"feedInfo": {"description": yuanbao_meta.get("description")},
+                        "authorInfo": {"nickname": yuanbao_meta.get("author")},
+                        "videoUrl": video_url}}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return {
+            "platform": "wechat",
+            "id": "wechat_video",
+            "author": yuanbao_meta.get("author"),
+            "description": yuanbao_meta.get("description"),
+            "create_time": None,
+            "media_type": None,
+            "video_url": video_url,
+            "download_user_agent": DESKTOP_UA,
+        }
+
+    # 回退：第三方 sph.litao.workers.dev
     payload = request_json(
         WECHAT_PARSER_URL,
         method="POST",

@@ -55,7 +55,20 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8000
 ```bash
 # 连接 PostgreSQL（不设则回退 SQLite）
 PGDATABASE_URL=postgresql://user:pass@host:5432/db
+
+# 视频号解析凭据（/api/sph/resolve 必需，元宝 cookie）
+HY_TOKEN=your_cookie_string
 ```
+
+## 视频号解析（/api/sph/resolve）
+
+解析视频号分享链接为可播放/下载的视频直链。两步纯 HTTP：
+1. 腾讯元宝 API 换取 exportId/token（需 `HY_TOKEN` cookie）
+2. 微信频道 API 换取 videoUrl
+
+- **必需**：`HY_TOKEN`（腾讯元宝登录 cookie），未配置返回 400
+- **非官方接口**：`server/app.py` 硬编码了特定账号的请求头，腾讯侧变动/风控会导致失败
+- **安全**：`HY_TOKEN` 是登录凭据，只能放 `.env` / Coze 环境变量，绝不提交 Git
 
 ## 依赖 skill
 
