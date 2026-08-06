@@ -567,6 +567,120 @@ def health():
 
 
 # ---------------------------------------------------------------------------
+# 视频号链接解析（移植自 wx_channels_download/internal/api/sph/worker.js）
+# 两步纯 HTTP：分享链接 → 元宝换取 exportId/token → 微信频道换取 videoUrl
+# 依赖环境变量 HY_TOKEN（腾讯元宝 cookie，可在浏览器登录元宝后 F12 获取）
+# ---------------------------------------------------------------------------
+import httpx
+
+_SPH_PARSE_URL = "https://yuanbao.tencent.com/api/weixin/get_parse_result"
+_SPH_FEED_URL = "https://channels.weixin.qq.com/finder-preview/api/feed/get_feed_info"
+_SPH_PAGE_URL = "https%3A%2F%2Fchannels.weixin.qq.com%2Ffinder-preview%2Fpages%2Ffeed"
+_SPH_REFERER = "https://yuanbao.tencent.com/chat/naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1"
+_SPH_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+)
+
+
+def _sph_rid() -> str:
+    import random
+
+    ts = f"{int(time.time()):x}"
+    rand = "".join(random.choice("0123456789abcdef") for _ in range(8))
+    return f"{ts}-{rand}"
+
+
+def _sph_parse_share_url(share_url: str, cookie: str) -> dict:
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "origin": "https://yuanbao.tencent.com",
+        "referer": _SPH_REFERER,
+        "user-agent": _SPH_UA,
+        "t-userid": "b9575f6b0a8c4a55a08096904a5ef20a",
+        "x-agentid": "naQivTmsDa/cf4d0079-ed1b-4c55-a3f3-2ca1379727d1",
+        "x-device-id": "1921b001708100d7fa31002b9646bd0cc15a3e2e1f",
+        "x-hy92": "e963067ffa31002b9646bd0c03000008b1951a",
+        "x-hy93": "1921b001708100d7fa31002b9646bd0cc15a3e2e1f",
+        "x-id": "b9575f6b0a8c4a55a08096904a5ef20a",
+        "x-platform": "mac",
+        "x-source": "web",
+        "x-webversion": "2.69.0",
+        "cookie": cookie,
+    }
+    payload = {"type": "video_channel_url", "url": share_url, "scene": 1}
+    resp = httpx.post(_SPH_PARSE_URL, json=payload, headers=headers, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _sph_get_feed_info(export_id: str, general_token: str) -> dict:
+    rid = _sph_rid()
+    referer = (
+        "https://channels.weixin.qq.com/finder-preview/pages/feed"
+        f"?entry_card_type=48&comment_scene=39&appid=0&token={general_token}"
+        f"&entry_scene=0&eid={export_id}"
+    )
+    headers = {
+        "accept": "application/json, text/plain, */*",
+        "content-type": "application/json",
+        "origin": "https://channels.weixin.qq.com",
+        "referer": referer,
+        "user-agent": _SPH_UA,
+    }
+    api_url = f"{_SPH_FEED_URL}?_rid={rid}&_pageUrl={_SPH_PAGE_URL}"
+    payload = {"baseReq": {"generalToken": general_token}, "exportId": export_id}
+    resp = httpx.post(api_url, json=payload, headers=headers, timeout=15)
+    resp.raise_for_status()
+    return resp.json()
+
+
+class SphResolveRequest(BaseModel):
+    url: str
+
+
+@app.post("/api/sph/resolve")
+def sph_resolve(req: SphResolveRequest):
+    """解析视频号分享链接，返回可播放/下载的视频直链。"""
+    cookie = os.environ.get("HY_TOKEN", "")
+    if not cookie:
+        raise HTTPException(status_code=400, detail="HY_TOKEN 未配置")
+
+    try:
+        parse = _sph_parse_share_url(req.url.strip(), cookie)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"parse share url failed: {exc}") from exc
+
+    data = parse.get("data") or {}
+    export_id = data.get("wx_export_id", "")
+    playable = data.get("playable_url") or ""
+    from urllib.parse import parse_qs, urlparse
+
+    qs = parse_qs(urlparse(playable).query)
+    general_token = (qs.get("token") or [""])[0]
+    eid = (qs.get("eid") or [""])[0] or export_id
+
+    try:
+        feed = _sph_get_feed_info(eid, general_token)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"get feed info failed: {exc}") from exc
+
+    feed_data = feed.get("data") or {}
+    feed_info = feed_data.get("feedInfo") or {}
+    return {
+        "code": 0,
+        "data": {
+            "videoUrl": feed_info.get("videoUrl") or "",
+            "originVideoUrl": feed_info.get("originVideoUrl") or "",
+            "description": feed_info.get("description") or "",
+            "author": (feed_data.get("authorInfo") or {}).get("nickname") or "",
+            "coverUrl": feed_info.get("coverUrl") or "",
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Serve built frontend (production) — mount AFTER all API routes
 # ---------------------------------------------------------------------------
 try:
