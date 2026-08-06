@@ -399,6 +399,8 @@ def _run_task(task_id: str, url: str):
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=1200,
             )
             if proc.returncode != 0:

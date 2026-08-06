@@ -17,6 +17,12 @@ _SERVER_DIR = pathlib.Path(__file__).resolve().parent.parent
 if str(_SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(_SERVER_DIR))
 
+# Force UTF-8 output so emoji/Chinese in video descriptions don't crash on
+# Windows (GBK console) when printing JSON.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 
 WECHAT_PARSER_URL = "https://sph.litao.workers.dev/api/fetch_video_profile"
 DOUYIN_DETAIL_URL = "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={aweme_id}"
