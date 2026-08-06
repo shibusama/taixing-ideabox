@@ -352,20 +352,31 @@ def extract_media(work_dir, mp4_path, fps_interval):
     # 场景检测抽帧：只在画面变化大时取一帧，避免重复/海量帧。
     # scene 阈值越高越"挑剔"（0.3 是常用起点）。配合 fps 下限防止抖动的误判。
     # -vsync vfr 表示变帧率输出，仅当 select 命中才写一帧。
+    # -strict unofficial + -pix_fmt yuvj420p：兼容 non-full-range YUV 视频（否则 mjpeg 编码器拒绝，抽帧为 0）
+    # 兜底：scene 检测可能 0 帧（短视频/画面静止），此时回退固定间隔抽帧，保证 ocr_frames 有输入。
     scene_threshold = "0.3"
-    run([
-        ffmpeg,
-        "-y",
-        "-i",
-        str(mp4_path),
-        "-vf",
-        f"select='gt(scene,{scene_threshold})',scale=720:-1",
-        "-vsync",
-        "vfr",
-        "-q:v",
-        "2",
+    scene_cmd = [
+        ffmpeg, "-y", "-i", str(mp4_path),
+        "-strict", "unofficial",
+        "-vf", f"select='gt(scene,{scene_threshold})',scale=720:-1",
+        "-pix_fmt", "yuvj420p",
+        "-vsync", "vfr", "-q:v", "2",
         str(frames / "frame_%03d.jpg"),
-    ], timeout=180)
+    ]
+    run(scene_cmd, timeout=180)
+    if not list(frames.glob("*.jpg")):
+        print(f"[extract_media] scene detection produced 0 frames, falling back to fps=1/{fps_interval}", file=sys.stderr)
+        frames_dir_clean = frames
+        for old in frames_dir_clean.glob("*.jpg"):
+            old.unlink()
+        run([
+            ffmpeg, "-y", "-i", str(mp4_path),
+            "-strict", "unofficial",
+            "-vf", f"fps=1/{fps_interval},scale=720:-1",
+            "-pix_fmt", "yuvj420p",
+            "-q:v", "2",
+            str(frames / "frame_%03d.jpg"),
+        ], timeout=180)
     run([
         ffmpeg,
         "-y",
