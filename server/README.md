@@ -79,6 +79,19 @@ HY_TOKEN=your_cookie_string
 
 系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写使用 **Coze 平台云 ASR**（`coze_coding_dev_sdk.ASRClient`，仅 Coze 环境可用），无需本地下载模型。
 
+## 视频信息提取（ASR + VLM）
+
+`prepare_video.py` 从视频提取信息，两条路径：
+
+| 路径 | 用途 | 说明 |
+|---|---|---|
+| **ASR 语音转写** | 提取视频里"说的话" | Coze 云 ASR，上传音频到对象存储调用 |
+| **VLM 视觉理解** | 提取图片/画面内容（转写为空时触发） | Qwen-VL 理解关键帧语义 + 提取文字 |
+
+**VLM（视觉语言模型）**：当 ASR 转写为空（如图片 + 背景音乐视频），`prepare_video.py` 用 Qwen-VL（`server/llm.py` 的 `describe_image()`）逐帧理解图片内容。关键帧用 ffmpeg **场景检测**抽取（只保留画面变化的帧，上限 `VLM_MAX_FRAMES` 默认 8）。
+
+**降级**：VLM 未配置 key 时回退 tesseract OCR（需系统装 tesseract + 中文包）；都不可用时跳过，不影响主流程。
+
 ## 前端 API 地址配置
 
 前端 `src/config.js` 按优先级解析后端地址：
@@ -92,16 +105,11 @@ HY_TOKEN=your_cookie_string
 要启用 AI 深度分析导图，创建 `server/.env`（已 gitignore，注意**不要提交 key**）：
 
 ```bash
-# 硅基流动
+# 硅基流动（导图文本模型 + VLM 视觉模型共用 key）
 LLM_PROVIDER=siliconflow
 LLM_API_KEY=sk-xxx
-LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash
-
-# 或任何 OpenAI 兼容接口
-LLM_PROVIDER=openai-compatible
-LLM_BASE_URL=https://api.example.com/v1
-LLM_API_KEY=sk-xxx
-LLM_MODEL=your-model
+LLM_MODEL=Qwen/Qwen2.5-7B-Instruct      # 导图生成
+VLM_MODEL=Qwen/Qwen3-VL-8B-Instruct      # 关键帧视觉理解（可选更强：Qwen3-VL-32B）
 ```
 
 > 默认 `LLM_MODEL` 为 `Qwen/Qwen2.5-7B-Instruct`（`server/llm.py`）。早期使用该免费模型时发现输出大量乱码，建议配置 `DeepSeek-V4-Flash` 等更稳定的模型。

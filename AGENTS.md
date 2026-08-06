@@ -83,7 +83,35 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频导图：粘贴视频号/抖音链接 → 后端解析转写 → LLM/模板生成 markmap 思维导图渲染
+9. 视频导图：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 生成 markmap 思维导图渲染
+
+## 视频导图链路
+
+```
+视频号/抖音链接
+  → 解析直链（视频号走元宝 /api/sph/resolve，需 HY_TOKEN；抖音走 aweme detail）
+  → 下载 input.mp4
+  → ffmpeg 拆解：提取 audio.wav + 场景检测抽关键帧（720px，scene 阈值 0.3）
+  → 信息提取：
+      ├─ ASR 语音转写（Coze 云，说的话）→ transcript.txt
+      └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL 逐帧理解 → ocr_result.txt
+  → 组装 low_cost_material.json → LLM/模板生成 markmap 思维导图
+```
+
+- **VLM**：`server/llm.py` 的 `describe_image()`，图片转 base64，调 `VLM_MODEL`（默认 `Qwen/Qwen3-VL-8B-Instruct`），上限 `VLM_MAX_FRAMES`（默认 8 帧）
+- **降级**：VLM 未配 key → 回退 tesseract OCR（`ocr_frames_tesseract`）→ 都不可用则跳过
+- **场景检测**：`extract_media` 用 `select='gt(scene,0.3)'` + `-vsync vfr` 只抽画面变化的帧
+
+## 环境变量（server/.env，已 gitignore）
+
+| 变量 | 用途 |
+|---|---|
+| `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） |
+| `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（导图 + VLM 共用） |
+| `LLM_MODEL` | 导图文本模型（默认 Qwen/Qwen2.5-7B-Instruct） |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） |
+| `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） |
 
 ## 代码规范
 - 组件使用函数式组件 + Hooks
@@ -145,3 +173,15 @@ pnpm run build
 - `server/migrate_cache.py` / `server/migrate_db.py` — 一次性迁移脚本，已删除
 - `server/test_transcribe.py` — 测试脚本，已删除
 - `server/work/` — 空目录，已删除
+
+### 10. Qwen2.5-VL 已下线，用 Qwen3-VL
+- **问题**：硅基流动上 `Qwen/Qwen2.5-VL-7B-Instruct` 返回 "Model does not exist"，32B/72B 返回 "Model disabled"
+- **原因**：账号实际可访问的视觉模型是 **Qwen3-VL 系列**（Qwen2.5-VL 已下线/不可用）
+- **修复**：`VLM_MODEL` 设为 `Qwen/Qwen3-VL-8B-Instruct`（轻量）或 `Qwen/Qwen3-VL-32B-Instruct`（更强）
+- 查询账号可用模型：`GET /v1/models`（Bearer 用 LLM_API_KEY），过滤 VL/Vision 关键词
+
+### 11. 图片/背景音乐视频（无语音）信息在图片里
+- **问题**：ASR 转写为空（视频只有图+音乐），导图没有内容
+- **修复**：`ocr_frames()` 在转写为空时触发，VLM（Qwen-VL）逐帧理解画面语义 + 提取文字，并入 `low_cost_material.json` 的 `ocr_text` 字段
+- **关键帧**：`extract_media` 用 ffmpeg 场景检测（`select='gt(scene,0.3)'`）只抽画面变化的帧，720px
+- **性能**：VLM 逐帧调用较慢，用 `VLM_MAX_FRAMES`（默认 8）限制；成本随帧数增加

@@ -34,6 +34,11 @@ git push
 |---|---|---|
 | `PGDATABASE_URL` | Postgres 连接串 | ✅ 不设则回退 SQLite，数据不共享/易丢 |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析用） | 用视频号解析功能才需要 |
+| `LLM_API_KEY` | 硅基流动 API key（导图 + VLM 共用） | 深度导图 / VLM 视觉理解 |
+| `LLM_BASE_URL` | 硅基流动地址（默认 https://api.siliconflow.cn/v1） | — |
+| `LLM_MODEL` | 导图文本模型（默认 Qwen/Qwen2.5-7B-Instruct） | — |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） | — |
+| `VLM_MAX_FRAMES` | VLM 处理最大帧数（默认 8） | — |
 | `WORK_ROOT` | `/tmp/ideabox/work`（start.sh 已默认） | 默认即可 |
 | `DEPLOY_RUN_PORT` | Coze 自动注入 | 自动 |
 | `COZE_ASR_BASE_URL` | 视频导图云端 ASR | 用视频功能才需要 |
@@ -72,23 +77,24 @@ git push
 | **`server/` 目录只读** | `WORK_ROOT` 必须指向可写目录（默认 `/tmp/ideabox/work`） |
 | **视频号解析依赖 HY_TOKEN + 非官方接口** | `/api/sph/resolve` 走元宝 + 微信频道接口，HY_TOKEN 未配置会返回 400 |
 | **前端产物大（868KB）** | Vite 有 chunk 警告，属正常，暂不影响功能 |
-| **OCR 需要系统 tesseract** | 图片/音乐视频的 OCR 功能依赖系统 tesseract + 中文语言包，见下方"OCR 部署" |
+| **VLM 需要 LLM_API_KEY** | 图片/音乐视频的视觉理解走 Qwen-VL，未配 key 时回退 tesseract OCR，见下方"视觉理解部署" |
 
-### OCR 部署（图片/背景音乐视频的文字提取）
+### 视觉理解部署（图片/背景音乐视频的信息提取）
 
-视频无语音时，后端会用 OCR 从关键帧提取图片文字。**依赖系统 tesseract**：
+视频无语音时（ASR 转写为空），后端从关键帧提取图片内容。**主方案：VLM 视觉模型**，兜底：tesseract OCR。
 
+**方案一：VLM（推荐，无需装系统软件）**
+- 配置 `LLM_API_KEY` + `VLM_MODEL`（默认 `Qwen/Qwen3-VL-8B-Instruct`，硅基流动）
+- 关键帧用 ffmpeg **场景检测**抽取，VLM 逐帧理解画面语义 + 提取文字
+- 每视频最多 `VLM_MAX_FRAMES`（默认 8）次调用
+
+**方案二：tesseract OCR（兜底，需装系统软件）**
 ```bash
-# Ubuntu / Debian（Coze 沙箱若基于此类镜像）
+# Ubuntu / Debian
 apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
-
-# 若 tesseract 不在 PATH，代码会尝试常见安装路径
-# 语言包需含 chi_sim（中文）才能识别中文图片文字
 ```
-
-- Python 依赖 `pytesseract` + `Pillow` 已加入 `server/requirements.txt`
-- **未装 tesseract 不影响主流程**：OCR 自动跳过，视频导图照常工作（优雅降级）
-- 本地 Windows 装法：winget 装 Tesseract-OCR，再下载 `chi_sim.traineddata` 放入 tessdata 目录
+- Python 依赖 `pytesseract` + `Pillow` 已在 `server/requirements.txt`
+- **都不配置不影响主流程**：图片信息提取自动跳过，视频导图照常工作（优雅降级）
 
 ## 五、本地 vs 生产差异速查
 
@@ -98,5 +104,5 @@ apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-chi-sim
 | 前端 | FastAPI 托管 `dist/`（单进程） | `dist/` 静态文件（后端挂载） |
 | 视频 ASR | ❌ 无 SDK | ✅ 平台内建 |
 | 视频号解析 | 需本地 `.env` 配 `HY_TOKEN` | 环境变量 `HY_TOKEN` |
-| OCR | 需装 tesseract + chi_sim 语言包 | 需 apt 装 tesseract-ocr-chi-sim |
+| 视觉理解 | `LLM_API_KEY` + `VLM_MODEL` | 环境变量 `LLM_API_KEY` + `VLM_MODEL` |
 | 启动 | `start-server.bat` / `start-dev.sh` | `sh server/start.sh` |

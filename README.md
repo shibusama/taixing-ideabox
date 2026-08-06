@@ -112,9 +112,36 @@ sh build-and-commit.sh
 - 编辑/删除/置顶
 - 数据导入/导出（JSON）
 - 看板视图：按标签分列，拖拽打标签
-- 视频导图：粘贴视频链接 → 思维导图
+- 视频导图：粘贴视频链接 → 解析下载 → ASR 转写 + VLM 视觉理解 → 思维导图
 - 响应式布局
 
 ## 数据存储
 
 本地开发使用 `server/ideabox.db`（SQLite，首次启动自动建表）；生产环境（Coze 部署）通过环境变量 `PGDATABASE_URL` 连接 PostgreSQL。数据访问一律通过后端 API，前端不直接读写数据库。
+
+## 视频导图（核心链路）
+
+```
+粘贴视频号/抖音链接
+  → 解析直链（视频号走元宝 /api/sph/resolve，需 HY_TOKEN）
+  → 下载视频
+  → ffmpeg 拆解（提取音频 + 场景检测抽帧）
+  → 信息提取：
+      ├─ ASR 语音转写（Coze 云，说的话）
+      └─ VLM 视觉理解（Qwen-VL，图片内容 + 文字，转写为空时触发）
+  → 组装导图素材 → LLM/模板生成 markmap 思维导图
+```
+
+## 环境变量（server/.env）
+
+| 变量 | 用途 | 必需 |
+|---|---|---|
+| `PGDATABASE_URL` | PostgreSQL 连接串（不设则回退 SQLite） | 生产必需 |
+| `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） | 视频号功能 |
+| `LLM_API_KEY` | 硅基流动 API key（导图 + VLM 共用） | 深度导图 |
+| `LLM_BASE_URL` | 硅基流动地址（默认已配） | — |
+| `LLM_MODEL` | 导图文本模型（默认 Qwen2.5-7B） | — |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） | — |
+| `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
+
+⚠️ `.env` 已 gitignore，**不要提交密钥**。Coze 部署在控制台配置环境变量。
