@@ -564,19 +564,6 @@ def get_mindmap(task_id: str):
 @app.get("/api/health")
 def health():
     return {"ok": True}
-        try:
-            t0 = time.time()
-            r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-            elapsed = round(time.time() - t0, 2)
-            results[url] = {"status": r.status_code, "time": f"{elapsed}s", "len": len(r.text)}
-        except requests.exceptions.Timeout:
-            results[url] = {"error": "timeout"}
-        except requests.exceptions.ConnectionError as e:
-            results[url] = {"error": f"connection_error: {str(e)[:80]}"}
-        except Exception as e:
-            results[url] = {"error": f"{type(e).__name__}: {str(e)[:80]}"}
-
-    return {"results": results}
 
 
 # ---------------------------------------------------------------------------
