@@ -129,3 +129,50 @@ def generate_mindmap(low_cost, transcript_preview="", analysis=None):
     except Exception as exc:
         # Fall back to template so the pipeline never hard-fails on LLM issues.
         return _template_mindmap(low_cost) + f"\n\n> LLM 生成失败，已回退模板: {exc}"
+
+
+def describe_image(image_path, prompt="请描述这张图片的内容，提取所有可见的文字、图表、产品或关键信息。"):
+    """Describe an image using a vision LLM (VLM) via the same OpenAI-compatible channel.
+
+    Reuses LLM_BASE_URL / LLM_API_KEY; model is VLM_MODEL (default Qwen-VL on SiliconFlow).
+    Returns a text description, or raises on failure.
+    """
+    import base64
+
+    api_key = os.environ.get("LLM_API_KEY", "")
+    if not api_key:
+        raise RuntimeError("LLM_API_KEY 未配置")
+
+    base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
+    if not base_url:
+        base_url = "https://api.siliconflow.cn/v1"
+    model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+
+    b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": prompt},
+                ],
+            }
+        ],
+        "temperature": 0.2,
+    }
+    req = urllib.request.Request(
+        f"{base_url}/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    return data["choices"][0]["message"]["content"].strip()

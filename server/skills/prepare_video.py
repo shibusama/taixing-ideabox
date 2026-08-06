@@ -11,6 +11,12 @@ import time
 import urllib.parse
 import urllib.request
 
+# Ensure server/ is on path so `import llm` works when this script runs standalone
+# (from app.py via importlib, or directly via `python skills/prepare_video.py`).
+_SERVER_DIR = pathlib.Path(__file__).resolve().parent.parent
+if str(_SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(_SERVER_DIR))
+
 
 WECHAT_PARSER_URL = "https://sph.litao.workers.dev/api/fetch_video_profile"
 DOUYIN_DETAIL_URL = "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={aweme_id}"
@@ -337,14 +343,19 @@ def extract_media(work_dir, mp4_path, fps_interval):
     contact_sheet = work_dir / "contact_sheet.jpg"
 
     run([ffmpeg, "-y", "-i", str(mp4_path), "-vn", "-ac", "1", "-ar", "16000", str(audio)], timeout=180)
-    # scale=720:-1 提升 OCR 识别率（360 太低导致图片文字识别不清）
+    # 场景检测抽帧：只在画面变化大时取一帧，避免重复/海量帧。
+    # scene 阈值越高越"挑剔"（0.3 是常用起点）。配合 fps 下限防止抖动的误判。
+    # -vsync vfr 表示变帧率输出，仅当 select 命中才写一帧。
+    scene_threshold = "0.3"
     run([
         ffmpeg,
         "-y",
         "-i",
         str(mp4_path),
         "-vf",
-        f"fps=1/{fps_interval},scale=720:-1",
+        f"select='gt(scene,{scene_threshold})',scale=720:-1",
+        "-vsync",
+        "vfr",
         "-q:v",
         "2",
         str(frames / "frame_%03d.jpg"),
@@ -451,12 +462,10 @@ def transcribe(work_dir, audio, model_name="", skip=False):
         return {"available": False, "error": str(exc)}
 
 
-def ocr_frames(work_dir):
-    """Extract text from video keyframes via pytesseract (Tesseract OCR).
+def ocr_frames_tesseract(work_dir):
+    """Fallback: extract text from keyframes via pytesseract (Tesseract OCR).
 
-    Used when audio transcription is empty (e.g. image + background-music videos
-    where the information lives in the pictures). Gracefully degrades: if
-    tesseract is unavailable, returns empty instead of failing the pipeline.
+    Gracefully degrades: if tesseract is unavailable, returns empty.
     """
     frames_dir = work_dir / "frames"
     if not frames_dir.is_dir():
@@ -502,6 +511,54 @@ def ocr_frames(work_dir):
     ocr_text = "\n".join(uniq)
     (work_dir / "ocr_result.txt").write_text(ocr_text, encoding="utf-8")
     return {"available": bool(uniq), "text": ocr_text, "frames_read": len(uniq)}
+
+
+def ocr_frames(work_dir):
+    """Extract image content from keyframes, VLM first (Qwen-VL via SiliconFlow), tesseract fallback.
+
+    VLM understands image semantics (charts, products, scenes) beyond raw text, which
+    matters for image/music videos. Falls back to tesseract OCR when LLM is not configured.
+    """
+    frames_dir = work_dir / "frames"
+    if not frames_dir.is_dir():
+        return {"available": False, "error": "no frames directory"}
+
+    # Cap how many frames we feed the VLM (scene detection can still yield many).
+    frame_paths = sorted(frames_dir.glob("*.jpg"))
+    if not frame_paths:
+        return {"available": False, "error": "no frames extracted"}
+    max_frames = int(os.environ.get("VLM_MAX_FRAMES", "8"))
+    selected = frame_paths[:max_frames]
+
+    import llm as llm_mod
+
+    api_key = os.environ.get("LLM_API_KEY", "")
+    if not api_key:
+        return ocr_frames_tesseract(work_dir)
+
+    descriptions = []
+    for img in selected:
+        try:
+            desc = llm_mod.describe_image(
+                str(img),
+                prompt=(
+                    "这是一段视频的关键帧。请用中文描述图片内容："
+                    "1) 图片上所有可见的文字（原样提取，包括标题、标语、字幕、数字）；"
+                    "2) 图片展示的主体内容（产品/图表/场景/人物动作等）。"
+                    "简洁分点输出。"
+                ),
+            )
+            descriptions.append(f"[{img.name}] {desc}")
+        except Exception as exc:
+            print(f"[vlm] {img.name} failed: {exc}", file=sys.stderr)
+            continue
+
+    if not descriptions:
+        return ocr_frames_tesseract(work_dir)
+
+    ocr_text = "\n\n".join(descriptions)
+    (work_dir / "ocr_result.txt").write_text(ocr_text, encoding="utf-8")
+    return {"available": True, "text": ocr_text, "frames_read": len(descriptions), "engine": "vlm"}
 
 
 def build_low_cost_material(work_dir, material, max_chars):
