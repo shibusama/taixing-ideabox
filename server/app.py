@@ -566,6 +566,36 @@ def health():
     return {"ok": True}
 
 
+@app.get("/api/network-test")
+def network_test():
+    """测试生产环境外网访问能力"""
+    import socket, requests, time
+
+    targets = [
+        "https://weixin.qq.com",
+        "https://www.douyin.com",
+        "https://www.baidu.com",
+        "https://github.com",
+        "https://sph.litao.workers.dev",
+        "https://api.coze.cn",
+    ]
+    results = {}
+    for url in targets:
+        try:
+            t0 = time.time()
+            r = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+            elapsed = round(time.time() - t0, 2)
+            results[url] = {"status": r.status_code, "time": f"{elapsed}s", "len": len(r.text)}
+        except requests.exceptions.Timeout:
+            results[url] = {"error": "timeout"}
+        except requests.exceptions.ConnectionError as e:
+            results[url] = {"error": f"connection_error: {str(e)[:80]}"}
+        except Exception as e:
+            results[url] = {"error": f"{type(e).__name__}: {str(e)[:80]}"}
+
+    return {"results": results}
+
+
 # ---------------------------------------------------------------------------
 # Serve built frontend (production) — mount AFTER all API routes
 # ---------------------------------------------------------------------------
