@@ -337,13 +337,14 @@ def extract_media(work_dir, mp4_path, fps_interval):
     contact_sheet = work_dir / "contact_sheet.jpg"
 
     run([ffmpeg, "-y", "-i", str(mp4_path), "-vn", "-ac", "1", "-ar", "16000", str(audio)], timeout=180)
+    # scale=720:-1 提升 OCR 识别率（360 太低导致图片文字识别不清）
     run([
         ffmpeg,
         "-y",
         "-i",
         str(mp4_path),
         "-vf",
-        f"fps=1/{fps_interval},scale=360:-1",
+        f"fps=1/{fps_interval},scale=720:-1",
         "-q:v",
         "2",
         str(frames / "frame_%03d.jpg"),
@@ -450,6 +451,59 @@ def transcribe(work_dir, audio, model_name="", skip=False):
         return {"available": False, "error": str(exc)}
 
 
+def ocr_frames(work_dir):
+    """Extract text from video keyframes via pytesseract (Tesseract OCR).
+
+    Used when audio transcription is empty (e.g. image + background-music videos
+    where the information lives in the pictures). Gracefully degrades: if
+    tesseract is unavailable, returns empty instead of failing the pipeline.
+    """
+    frames_dir = work_dir / "frames"
+    if not frames_dir.is_dir():
+        return {"available": False, "error": "no frames directory"}
+    try:
+        import pytesseract
+        from PIL import Image
+    except Exception as exc:
+        return {"available": False, "error": f"pytesseract/PIL not available: {exc}"}
+
+    tesseract_cmd = shutil.which("tesseract")
+    if not tesseract_cmd:
+        for candidate in (
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            "/usr/bin/tesseract",
+            "/usr/local/bin/tesseract",
+        ):
+            p = pathlib.Path(candidate)
+            if p.exists():
+                tesseract_cmd = candidate
+                break
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+
+    lines = []
+    for img in sorted(frames_dir.glob("*.jpg")):
+        try:
+            text = pytesseract.image_to_string(Image.open(str(img)), lang="chi_sim+eng")
+        except Exception as exc:
+            print(f"[ocr] {img.name} failed: {exc}", file=sys.stderr)
+            continue
+        for ln in text.splitlines():
+            ln = ln.strip()
+            if ln:
+                lines.append(ln)
+    # dedupe, keep order
+    seen, uniq = set(), []
+    for ln in lines:
+        if ln not in seen:
+            seen.add(ln)
+            uniq.append(ln)
+    ocr_text = "\n".join(uniq)
+    (work_dir / "ocr_result.txt").write_text(ocr_text, encoding="utf-8")
+    return {"available": bool(uniq), "text": ocr_text, "frames_read": len(uniq)}
+
+
 def build_low_cost_material(work_dir, material, max_chars):
     transcript_json_path = work_dir / "transcript.json"
     selected_segments = []
@@ -505,9 +559,20 @@ def build_low_cost_material(work_dir, material, max_chars):
         preview_lines.append(f"[{row.get('start')}-{row.get('end')}] {row.get('text')}")
     if not selected_segments:
         preview_lines.append("(no transcript preview available)")
+    ocr_result_path = work_dir / "ocr_result.txt"
+    if ocr_result_path.exists():
+        ocr_lines = [ln.strip() for ln in ocr_result_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        if ocr_lines:
+            preview_lines.append("")
+            preview_lines.append("ocr text from keyframes (image-only video):")
+            preview_lines.extend(ocr_lines[:50])
 
     transcript_preview = work_dir / "transcript_preview.txt"
     transcript_preview.write_text("\n".join(preview_lines), encoding="utf-8")
+
+    # OCR text from keyframes (image/music videos without speech)
+    ocr_result = work_dir / "ocr_result.txt"
+    ocr_text = ocr_result.read_text(encoding="utf-8").strip() if ocr_result.exists() else ""
 
     low_cost = {
         "mode": "low_cost_first",
@@ -528,6 +593,7 @@ def build_low_cost_material(work_dir, material, max_chars):
         "media_info": material.get("media_info"),
         "transcript": transcript_stats,
         "selected_segments": selected_segments,
+        "ocr_text": ocr_text or None,
         "omitted": {
             "full_transcript_path": material.get("paths", {}).get("transcript_txt"),
             "contact_sheet_path": material.get("paths", {}).get("contact_sheet"),
@@ -537,6 +603,7 @@ def build_low_cost_material(work_dir, material, max_chars):
             "low_cost_material.json",
             "transcript_preview.txt",
             "analysis_material.json",
+            "ocr_text field (image text, when transcript is empty)",
             "transcript.txt only if exact coverage is required",
             "contact_sheet.jpg only if visual verification is required",
         ],
@@ -551,7 +618,7 @@ def main():
     parser.add_argument("--url", required=True, help="WeChat Channels or Douyin share URL/text")
     parser.add_argument("--work-dir", required=True, help="Directory for intermediate files")
     parser.add_argument("--model", default="", help="(unused, kept for compatibility)")
-    parser.add_argument("--frame-interval", type=int, default=10, help="Seconds between sampled frames")
+    parser.add_argument("--frame-interval", type=int, default=5, help="Seconds between sampled frames")
     parser.add_argument("--douyin-cookie", default="", help="Optional user-provided Douyin Cookie header")
     parser.add_argument("--no-transcript", action="store_true", help="Skip ASR transcription")
     parser.add_argument("--low-cost-chars", type=int, default=2400, help="Max transcript preview characters for low-cost material")
@@ -572,6 +639,13 @@ def main():
     audio, contact_sheet, media_info = extract_media(work_dir, mp4_path, args.frame_interval)
     transcript_status = transcribe(work_dir, audio, args.model, skip=args.no_transcript)
 
+    # Image/music videos often have no speech -> transcription empty, info lives in frames.
+    ocr_status = None
+    if not transcript_status.get("available"):
+        ocr_status = ocr_frames(work_dir)
+        if ocr_status.get("available"):
+            print(f"[ocr] extracted text from frames", file=sys.stderr)
+
     material = {
         **{k: v for k, v in metadata.items() if k not in {"video_url", "download_user_agent"}},
         "share_url": args.url,
@@ -587,6 +661,7 @@ def main():
         },
         "media_info": media_info,
         "transcript": transcript_status,
+        "ocr": ocr_status,
     }
     build_low_cost_material(work_dir, material, args.low_cost_chars)
     (work_dir / "analysis_material.json").write_text(json.dumps(material, ensure_ascii=False, indent=2), encoding="utf-8")
