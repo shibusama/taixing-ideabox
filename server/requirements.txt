@@ -8,4 +8,5 @@ pydantic>=2.10
 httpx>=0.28.1
 pytesseract>=0.3.10
 Pillow>=10.0.0
+imageio-ffmpeg>=0.6.0
 

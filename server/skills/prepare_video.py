@@ -24,7 +24,6 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
-WECHAT_PARSER_URL = "https://sph.litao.workers.dev/api/fetch_video_profile"
 DOUYIN_DETAIL_URL = "https://www.douyin.com/aweme/v1/web/aweme/detail/?aweme_id={aweme_id}"
 DOUYIN_UA = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) "
@@ -35,6 +34,28 @@ DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrom
 
 def run(cmd, timeout=None):
     return subprocess.run(cmd, timeout=timeout, check=True, text=True)
+
+
+def _find_ffmpeg():
+    """Locate ffmpeg: prefer PATH, fall back to the binary bundled with imageio-ffmpeg.
+
+    Coze deployment has no system ffmpeg; the imageio-ffmpeg pip package ships one,
+    so adding it to requirements.txt makes video processing work there too.
+    """
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    try:
+        import imageio_ffmpeg
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return None
+
+
+def _find_ffprobe():
+    """Locate ffprobe on PATH (imageio-ffmpeg does not bundle ffprobe)."""
+    return shutil.which("ffprobe")
 
 
 def request_json(url, method="GET", payload=None, headers=None, timeout=45):
@@ -215,35 +236,8 @@ def parse_wechat(url, work_dir):
             "download_user_agent": DESKTOP_UA,
         }
 
-    # 回退：第三方 sph.litao.workers.dev
-    payload = request_json(
-        WECHAT_PARSER_URL,
-        method="POST",
-        payload={"url": url},
-        headers={"Content-Type": "application/json; charset=utf-8", "User-Agent": DESKTOP_UA},
-    )
-    (work_dir / "profile.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    data = payload.get("data") or {}
-    feed = data.get("feedInfo") or payload.get("feedInfo") or {}
-    author = data.get("authorInfo") or payload.get("authorInfo") or {}
-    video_url = (
-        feed.get("videoUrl")
-        or (feed.get("h264VideoInfo") or {}).get("videoUrl")
-        or (feed.get("h265VideoInfo") or {}).get("videoUrl")
-        or feed.get("originVideoUrl")
-    )
-    if not video_url:
-        raise RuntimeError("No video URL returned by WeChat parser")
-    return {
-        "platform": "wechat",
-        "id": str((data.get("sceneInfo") or {}).get("dynamicExportId") or "wechat_video"),
-        "author": author.get("nickname"),
-        "description": feed.get("description"),
-        "create_time": feed.get("createtime"),
-        "media_type": feed.get("mediaType"),
-        "video_url": video_url,
-        "download_user_agent": DESKTOP_UA,
-    }
+    # 元宝解析失败且未拿到 video_url → 直接报错（不再回退不可靠的第三方服务）
+    raise RuntimeError("WeChat video parse failed: no video_url (check HY_TOKEN / yuanbao API)")
 
 
 def follow_redirect(url, cookie=None):
@@ -338,8 +332,8 @@ def parse_douyin(url_or_text, work_dir, cookie=None):
 
 
 def extract_media(work_dir, mp4_path, fps_interval):
-    ffmpeg = shutil.which("ffmpeg")
-    ffprobe = shutil.which("ffprobe")
+    ffmpeg = _find_ffmpeg()
+    ffprobe = _find_ffprobe()
     if not ffmpeg:
         raise RuntimeError("ffmpeg is required but was not found on PATH")
 
@@ -425,7 +419,7 @@ def transcribe(work_dir, audio, model_name="", skip=False):
     try:
         # Convert WAV to MP3 (ASR supports MP3 better)
         mp3_path = audio_path.with_suffix(".mp3")
-        ffmpeg = shutil.which("ffmpeg")
+        ffmpeg = _find_ffmpeg()
         if ffmpeg:
             subprocess.run(
                 [ffmpeg, "-y", "-i", str(audio_path), "-acodec", "mp3", "-b:a", "64k", str(mp3_path)],
