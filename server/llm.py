@@ -117,7 +117,7 @@ def _chat_completion(provider, messages):
     base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
     if provider == "siliconflow" and not base_url:
         base_url = "https://api.siliconflow.cn/v1"
-    model = os.environ.get("LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+    model = os.environ.get("LLM_MODEL", "zai-org/GLM-5.2")
     api_key = os.environ.get("LLM_API_KEY", "")
 
     payload = {"model": model, "messages": messages, "temperature": 0.4}
@@ -181,7 +181,7 @@ def describe_image(image_path, prompt="请描述这张图片的内容，提取�
     base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
     if not base_url:
         base_url = "https://api.siliconflow.cn/v1"
-    model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
+    model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-32B-Instruct")
 
     b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
     data_url = f"data:image/jpeg;base64,{b64}"

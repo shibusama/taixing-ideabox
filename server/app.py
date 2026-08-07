@@ -593,7 +593,7 @@ def _text_to_image(prompt: str) -> str:
     if not base_url:
         base_url = "https://api.siliconflow.cn/v1"
     api_key = os.environ.get("LLM_API_KEY", "")
-    model = os.environ.get("IMAGE_MODEL", "Qwen/Qwen-Image")
+    model = os.environ.get("IMAGE_MODEL", "Tongyi-MAI/Z-Image")
     image_size = os.environ.get("IMAGE_SIZE", "1024x1024")
 
     payload = {"model": model, "prompt": prompt, "image_size": image_size}
