@@ -1,0 +1,4 @@
+# 开发环境额外依赖（视频解析本地处理）
+pytesseract>=0.3.10
+Pillow>=10.0.0
+imageio-ffmpeg>=0.6.0
