@@ -564,6 +564,10 @@ def get_note(task_id: str):
     }
 
 
+# In-memory cover task progress (survives task lifetime, not persisted)
+cover_progress: dict[str, str] = {}
+
+
 # ---------------------------------------------------------------------------
 # Cover pipeline (link -> AI image via text-to-image API)
 # ---------------------------------------------------------------------------
@@ -605,6 +609,7 @@ def _text_to_image(prompt: str) -> str:
 def _run_cover_task(task_id: str, url: str):
     """Background job: analyze content -> generate prompt -> text-to-image -> persist."""
     key = cache_key(url)
+    cover_progress[task_id] = "解析视频链接…"
     try:
         with SessionLocal() as db:
             task = db.get(Task, task_id)
@@ -615,9 +620,15 @@ def _run_cover_task(task_id: str, url: str):
         cached = _get_cached_cover(key)
         if cached:
             result = cached
+            cover_progress[task_id] = "已命中缓存，直接使用"
         else:
+            cover_progress[task_id] = "下载并分析视频内容…"
             low_cost, preview = _prepare_material(key, url)
+
+            cover_progress[task_id] = "生成 AI 提示词…"
             prompt = llm.generate_image_prompt(low_cost, preview)
+
+            cover_progress[task_id] = "绘制封面图中…"
             image_url = _text_to_image(prompt)
 
             result = {"id": key, "cached": False, "image_url": image_url, "prompt": prompt}
@@ -630,6 +641,7 @@ def _run_cover_task(task_id: str, url: str):
                     db.add(Cover(url_hash=key, url=url, image_url=image_url, prompt=prompt, created_at=_now_ms()))
                 db.commit()
 
+        cover_progress[task_id] = "完成！"
         with SessionLocal() as db:
             task = db.get(Task, task_id)
             if task:
@@ -637,6 +649,7 @@ def _run_cover_task(task_id: str, url: str):
                 task.result = result
                 db.commit()
     except Exception as exc:
+        cover_progress[task_id] = f"失败: {exc}"
         with SessionLocal() as db:
             task = db.get(Task, task_id)
             if task:
@@ -673,6 +686,7 @@ def get_cover(task_id: str):
         "status": task.status,
         "result": task.result,
         "error": task.error,
+        "progress": cover_progress.get(task_id, ""),
     }
 
 

@@ -7,6 +7,7 @@ export default function VideoCover() {
   const [error, setError] = useState(null)
   const [cover, setCover] = useState(null)
   const [cached, setCached] = useState(false)
+  const [progress, setProgress] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -39,6 +40,7 @@ export default function VideoCover() {
         await new Promise(r => setTimeout(r, 3000))
         const poll = await fetch(`${API_BASE}/api/cover/${task_id}`)
         const state = await poll.json()
+        if (state.progress) setProgress(state.progress)
         if (state.status === 'done') {
           setCover(state.result)
           setCached(state.result.cached)
@@ -85,7 +87,9 @@ export default function VideoCover() {
       {loading && (
         <div className="pop-panel bg-white p-8 text-center animate-pop-in">
           <div className="inline-block w-10 h-10 border-3 border-pop-black border-t-transparent animate-spin mb-3" />
-          <p className="font-display text-lg text-pop-black tracking-wide">正在生成封面…</p>
+          <p className="font-display text-lg text-pop-black tracking-wide">
+            {progress || '正在生成封面…'}
+          </p>
           <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">下载 · 转写 · 分析内容 · 绘制封面</p>
         </div>
       )}
