@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import db as dbmod
 import llm
 from db import SessionLocal, init_db
-from models import Idea, Mindmap, Note, Tag, Task
+from models import Cover, Idea, Mindmap, Note, Tag, Task
 
 BASE_DIR = pathlib.Path(__file__).parent
 
@@ -553,6 +553,131 @@ def create_note(req: NoteRequest):
 
 @app.get("/api/note/{task_id}")
 def get_note(task_id: str):
+    with SessionLocal() as db:
+        task = db.get(Task, task_id)
+    if task is None:
+        return {"status": "error", "error": "task not found"}
+    return {
+        "status": task.status,
+        "result": task.result,
+        "error": task.error,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cover pipeline (link -> AI image via text-to-image API)
+# ---------------------------------------------------------------------------
+
+class CoverRequest(BaseModel):
+    url: str
+
+
+def _get_cached_cover(url_hash: str) -> dict | None:
+    with SessionLocal() as db:
+        row = db.query(Cover).filter(Cover.url_hash == url_hash).first()
+        if row:
+            return {
+                "id": url_hash,
+                "cached": True,
+                "image_url": row.image_url,
+                "prompt": row.prompt,
+            }
+    return None
+
+
+def _text_to_image(prompt: str) -> str:
+    """Call SiliconFlow /images/generations, return the image URL."""
+    import urllib.request
+
+    base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
+    if not base_url:
+        base_url = "https://api.siliconflow.cn/v1"
+    api_key = os.environ.get("LLM_API_KEY", "")
+    model = os.environ.get("IMAGE_MODEL", "Qwen/Qwen-Image")
+    image_size = os.environ.get("IMAGE_SIZE", "1024x1024")
+
+    payload = {"model": model, "prompt": prompt, "image_size": image_size}
+    req = urllib.request.Request(
+        f"{base_url}/images/generations",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    images = data.get("images") or []
+    url = images[0].get("url") if images else ""
+    if not url:
+        raise RuntimeError("text-to-image API returned no image url")
+    return url
+
+
+def _run_cover_task(task_id: str, url: str):
+    """Background job: analyze content -> generate prompt -> text-to-image -> persist."""
+    key = cache_key(url)
+    try:
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "running"
+                db.commit()
+
+        cached = _get_cached_cover(key)
+        if cached:
+            result = cached
+        else:
+            low_cost, preview = _prepare_material(key, url)
+            prompt = llm.generate_image_prompt(low_cost, preview)
+            image_url = _text_to_image(prompt)
+
+            result = {"id": key, "cached": False, "image_url": image_url, "prompt": prompt}
+            with SessionLocal() as db:
+                existing = db.get(Cover, key)
+                if existing:
+                    existing.image_url = image_url
+                    existing.prompt = prompt
+                else:
+                    db.add(Cover(url_hash=key, url=url, image_url=image_url, prompt=prompt, created_at=_now_ms()))
+                db.commit()
+
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "done"
+                task.result = result
+                db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "error"
+                task.error = str(exc)
+                db.commit()
+
+
+@app.post("/api/cover")
+def create_cover(req: CoverRequest):
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        return {"task_id": None, "error": "请提供有效的链接"}
+    key = cache_key(url)
+    cached = _get_cached_cover(key)
+    if cached:
+        return {"task_id": None, "result": cached}
+    now = _now_ms()
+    task_id = uuid.uuid4().hex[:12]
+    with SessionLocal() as db:
+        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
+        db.commit()
+    _executor.submit(_run_cover_task, task_id, url)
+    return {"task_id": task_id}
+
+
+@app.get("/api/cover/{task_id}")
+def get_cover(task_id: str):
     with SessionLocal() as db:
         task = db.get(Task, task_id)
     if task is None:

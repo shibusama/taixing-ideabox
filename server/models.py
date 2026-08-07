@@ -69,6 +69,16 @@ class Note(Base):
     created_at = Column(Float, nullable=False)
 
 
+class Cover(Base):
+    __tablename__ = "covers"
+
+    url_hash = Column(String, primary_key=True)
+    url = Column(Text, nullable=False)
+    image_url = Column(Text, nullable=False)
+    prompt = Column(Text, nullable=True)
+    created_at = Column(Float, nullable=False)
+
+
 class Task(Base):
     __tablename__ = "tasks"
 

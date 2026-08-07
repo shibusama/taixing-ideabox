@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import VideoMindmap from './VideoMindmap'
 import VideoNote from './VideoNote'
+import VideoCover from './VideoCover'
 
 const TABS = [
   { key: 'mindmap', label: '思维导图' },
   { key: 'note', label: 'Markdown 笔记' },
+  { key: 'cover', label: 'AI 封面' },
 ]
 
 export default function VideoTools() {
@@ -29,7 +31,7 @@ export default function VideoTools() {
         ))}
       </div>
 
-      {tab === 'mindmap' ? <VideoMindmap /> : <VideoNote />}
+      {tab === 'mindmap' ? <VideoMindmap /> : tab === 'note' ? <VideoNote /> : <VideoCover />}
     </div>
   )
 }

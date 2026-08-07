@@ -342,3 +342,56 @@ def generate_note(low_cost, url, transcript_preview="", detail=False):
     except Exception as exc:
         # Fall back to template so the pipeline never hard-fails on LLM issues.
         return _template_note(low_cost, url, detail=detail) + f"\n\n> LLM 生成失败，已回退模板: {exc}"
+
+
+IMAGE_PROMPT_SYSTEM = (
+    "你是封面图提示词设计师。根据内容信息生成一段高质量的文生图英文提示词。\n"
+    "要求：\n"
+    "- 风格统一为 pop art comic 波普艺术漫画风（粗轮廓、高饱和对比色、网点、漫画对话框）\n"
+    "- 提炼内容的核心主题/主体，用具体画面呈现，不要出现文字\n"
+    "- 英文输出，60-100 词，只输出提示词本身，不要解释或包装\n"
+)
+
+
+def _template_image_prompt(low_cost):
+    """Fallback: build a generic pop-art prompt from metadata only."""
+    meta = low_cost.get("metadata", {})
+    desc = (meta.get("description") or "").strip()
+    topic = desc[:40] or meta.get("platform") or "video"
+    return (
+        f"A pop art comic style illustration about {topic}. "
+        "Bold black outlines, high-contrast vibrant colors, halftone dots, "
+        "comic speech bubble, dramatic composition, retro comic book cover look."
+    )
+
+
+def generate_image_prompt(low_cost, transcript_preview="", style="pop art comic"):
+    """Return an English image-generation prompt derived from content."""
+    provider = os.environ.get("LLM_PROVIDER", "none").lower()
+    api_key = os.environ.get("LLM_API_KEY", "")
+
+    meta = low_cost.get("metadata", {})
+    desc = (meta.get("description") or "").strip()
+    topic = desc[:200] or meta.get("platform") or "video"
+
+    if provider == "none" or not api_key:
+        return _template_image_prompt(low_cost)
+
+    user_prompt = (
+        f"内容信息:\n"
+        f"- 平台: {meta.get('platform')}\n"
+        f"- 作者: {meta.get('author')}\n"
+        f"- 描述: {desc}\n\n"
+        f"转录采样:\n{transcript_preview or '(无)'}\n\n"
+        f"请为这段内容生成一段 {style} 风格的英文文生图提示词。"
+    )
+    try:
+        return _chat_completion(
+            provider,
+            [
+                {"role": "system", "content": IMAGE_PROMPT_SYSTEM},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    except Exception:
+        return _template_image_prompt(low_cost)
