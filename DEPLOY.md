@@ -34,10 +34,11 @@ git push
 |---|---|---|
 | `PGDATABASE_URL` | Postgres 连接串 | ✅ 不设则回退 SQLite，数据不共享/易丢 |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析用） | 用视频号解析功能才需要 |
-| `LLM_API_KEY` | 硅基流动 API key（导图 + VLM 共用） | 深度导图 / VLM 视觉理解 |
+| `LLM_API_KEY` | 硅基流动 API key（文本 + VLM + 文生图共用） | 深度导图 / 笔记 / AI 封面 |
 | `LLM_BASE_URL` | 硅基流动地址（默认 https://api.siliconflow.cn/v1） | — |
-| `LLM_MODEL` | 导图文本模型（默认 Qwen/Qwen2.5-7B-Instruct） | — |
-| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） | — |
+| `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） | — |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） | — |
+| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image） | AI 封面 |
 | `VLM_MAX_FRAMES` | VLM 处理最大帧数（默认 8） | — |
 | `WORK_ROOT` | `/tmp/ideabox/work`（start.sh 已默认） | 默认即可 |
 | `DEPLOY_RUN_PORT` | Coze 自动注入 | 自动 |
@@ -57,7 +58,8 @@ git push
 ### 数据库
 
 - Postgres 表需**手动建表**（`Base.metadata.create_all()`，SQLite 才自动建）。
-- 表结构：`ideas` / `tags` / `mindmaps` / `tasks`。
+- 表结构：`ideas` / `tags` / `mindmaps` / `notes` / `covers` / `tasks`。
+- `notes` / `covers` 为新增表，建表 SQL 在 `server/migrations/`（`create_notes.sql` / `create_covers.sql`），部署时需在生产库执行。
 - 本地和 Coze 连**同一个库**才能共享数据。
 
 ## 三、部署流程（Coze 平台）
@@ -84,7 +86,7 @@ git push
 视频无语音时（ASR 转写为空），后端从关键帧提取图片内容。**主方案：VLM 视觉模型**，兜底：tesseract OCR。
 
 **方案一：VLM（推荐，无需装系统软件）**
-- 配置 `LLM_API_KEY` + `VLM_MODEL`（默认 `Qwen/Qwen3-VL-8B-Instruct`，硅基流动）
+- 配置 `LLM_API_KEY` + `VLM_MODEL`（默认 `Qwen/Qwen3-VL-32B-Instruct`，硅基流动）
 - 关键帧用 ffmpeg **场景检测**抽取，VLM 逐帧理解画面语义 + 提取文字
 - 每视频最多 `VLM_MAX_FRAMES`（默认 8）次调用
 

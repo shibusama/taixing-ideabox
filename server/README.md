@@ -1,24 +1,27 @@
 # 灵感匣后端 (server/)
 
-灵感匣「视频链接 → 思维导图」功能 + 数据存储后端，FastAPI + SQLAlchemy（PostgreSQL 生产 / SQLite 本地）。
+灵感匣「视频链接 → 思维导图 / Markdown 笔记 / AI 封面」功能 + 数据存储后端，FastAPI + SQLAlchemy（PostgreSQL 生产 / SQLite 本地）。
 
 ## 架构
 
 ```
-前端 React (markmap 渲染)
-   │  POST /api/mindmap {url}  → {task_id}   （后台线程执行）
-   │  GET  /api/mindmap/{task_id}            （轮询：pending/running/done/error）
-   │  GET/POST/PUT/DELETE /api/ideas         （灵感 CRUD）
+前端 React (markmap 渲染 / Markdown 渲染 / 图片展示)
+   │  POST /api/mindmap|note|cover {url}  → {task_id}   （后台线程执行）
+   │  GET  /api/mindmap|note|cover/{task_id}            （轮询：pending/running/done/error）
+   │  GET/POST/PUT/DELETE /api/ideas                    （灵感 CRUD）
    ▼
 FastAPI (server/app.py)
    │  调用 skill 脚本 prepare_video.py
    ▼
-解析管线（下载 MP4 → 提取音频 → Coze 云 ASR 转写）
+解析管线（下载 MP4 → 提取音频 → Coze 云 ASR 转写 → 抽帧 VLM/OCR）
    │  产出 transcript.txt / transcript.json
    ▼
-LLM 生成思维导图 Markdown（markmap 格式）   ← 未配置 key 时用模板
+LLM 生成（三种出口，共用同一份材料）：
+   ├─ generate_mindmap()      → markmap 思维导图
+   ├─ generate_note()         → Markdown 笔记（detail 可切详细模式）
+   └─ generate_image_prompt() → 文生图提示词 → SiliconFlow 文生图 → AI 封面
    ▼
-数据库持久化（mindmaps 表，按 URL sha256 缓存，重复解析秒回）
+数据库持久化（mindmaps / notes / covers 表，按 URL sha256 缓存，重复解析秒回）
 ```
 
 ## 数据存储
@@ -28,16 +31,19 @@ LLM 生成思维导图 Markdown（markmap 格式）   ← 未配置 key 时用�
 | 本地开发 | SQLite（`server/ideabox.db`，首次启动自动建表） | 无 `PGDATABASE_URL` 时默认 |
 | 生产（Coze） | PostgreSQL | 环境变量 `PGDATABASE_URL` |
 
-4 张表：
+6 张表：
 
 | 表 | 用途 | 说明 |
 |----|------|------|
 | `ideas` | 灵感主表 | 软删除（`deleted_at`），置顶/标签 JSON 数组 |
 | `tags` | 标签冗余表 | name 唯一 + count 计数，写操作后重建 |
-| `mindmaps` | 视频导图缓存 | 替代旧 `cache/*.json`，url_hash 唯一索引 |
+| `mindmaps` | 视频导图缓存 | url_hash 唯一索引，存 markmap MD |
+| `notes` | Markdown 笔记缓存 | url_hash 唯一索引，存结构化笔记 + detail 标记 |
+| `covers` | AI 封面缓存 | url_hash 唯一索引，存图片 URL + 提示词 |
 | `tasks` | 解析任务状态 | 持久化，服务重启后 pending/running 置为 error |
 
 > PostgreSQL 表需手动建表（`Base.metadata.create_all()`，仅 SQLite 自动建）。本地和线上连同一个库才能共享数据。
+> 新增表的建表 SQL 见 `server/migrations/`（`create_notes.sql` / `create_covers.sql`），生产库需手动执行。
 
 前端数据从 LocalStorage 迁移到后端 API（`src/hooks/useIdeas.js`），首次加载时若数据库为空且浏览器仍有旧 LocalStorage 数据会自动导入一次。
 
@@ -105,14 +111,15 @@ HY_TOKEN=your_cookie_string
 要启用 AI 深度分析导图，创建 `server/.env`（已 gitignore，注意**不要提交 key**）：
 
 ```bash
-# 硅基流动（导图文本模型 + VLM 视觉模型共用 key）
+# 硅基流动（文本模型 + VLM 视觉模型 + 文生图共用 key）
 LLM_PROVIDER=siliconflow
 LLM_API_KEY=sk-xxx
-LLM_MODEL=Qwen/Qwen2.5-7B-Instruct      # 导图生成
-VLM_MODEL=Qwen/Qwen3-VL-8B-Instruct      # 关键帧视觉理解（可选更强：Qwen3-VL-32B）
+LLM_MODEL=zai-org/GLM-5.2               # 文本生成（导图/笔记/封面提示词）
+VLM_MODEL=Qwen/Qwen3-VL-32B-Instruct     # 关键帧视觉理解
+IMAGE_MODEL=Tongyi-MAI/Z-Image           # 文生图（AI 封面）
 ```
 
-> 默认 `LLM_MODEL` 为 `Qwen/Qwen2.5-7B-Instruct`（`server/llm.py`）。早期使用该免费模型时发现输出大量乱码，建议配置 `DeepSeek-V4-Flash` 等更稳定的模型。
+> 代码默认值（`server/llm.py` / `server/app.py`）：`LLM_MODEL` = `zai-org/GLM-5.2`，`VLM_MODEL` = `Qwen/Qwen3-VL-32B-Instruct`，`IMAGE_MODEL` = `Tongyi-MAI/Z-Image`。早期默认的 `Qwen2.5-7B-Instruct` 输出大量乱码，已弃用。未配置 key 时全部回退模板。
 
 ## API
 
@@ -131,6 +138,10 @@ VLM_MODEL=Qwen/Qwen3-VL-8B-Instruct      # 关键帧视觉理解（可选更强�
 | POST | `/api/import` | 整体导入替换（ideas+archived） |
 | POST | `/api/mindmap` | `{"url"}` → `{"task_id"}` 或缓存命中 `{"result"}` |
 | GET | `/api/mindmap/{task_id}` | `{"status", "result": {"mindmap_md", "cached"}, "error"}` |
+| POST | `/api/note` | `{"url", "detail"}` → `{"task_id"}` 或缓存命中 `{"result"}`；`detail=true` 输出详细笔记 |
+| GET | `/api/note/{task_id}` | `{"status", "result": {"note_md", "detail", "cached"}, "error"}` |
+| POST | `/api/cover` | `{"url"}` → `{"task_id"}` 或缓存命中 `{"result"}` |
+| GET | `/api/cover/{task_id}` | `{"status", "result": {"image_url", "prompt", "cached"}, "error"}` |
 | GET | `/api/health` | 健康检查 |
 
 ## 目录
@@ -139,9 +150,10 @@ VLM_MODEL=Qwen/Qwen3-VL-8B-Instruct      # 关键帧视觉理解（可选更强�
 server/
 ├── app.py               # FastAPI 入口（任务管理 + 数据 API）
 ├── db.py                # SQLAlchemy engine / session / init（读取 server/.env）
-├── models.py            # 4 张表模型（Idea/Tag/Mindmap/Task，JSONB/JSON 按环境切换）
-├── llm.py               # LLM 接口（none / openai-compatible / siliconflow）
+├── models.py            # 6 张表模型（Idea/Tag/Mindmap/Note/Cover/Task，JSONB/JSON 按环境切换）
+├── llm.py               # LLM 接口（文本/VLM/文生图提示词）
 ├── regenerate_mindmaps.py  # 思维导图重生成脚本（SKILL_SCRIPT_PATH 或仓库内副本）
+├── migrations/          # 生产库建表 SQL（create_notes.sql / create_covers.sql）
 ├── requirements.txt
 ├── ideabox.db           # SQLite 数据库（自动创建，已 gitignore）
 ├── .env                 # 环境变量（本地，已 gitignore，不提交）

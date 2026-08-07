@@ -6,7 +6,7 @@
 ## 技术栈
 - **React 18** + **Vite 6** + **Tailwind CSS 3**
 - 数据存储：后端 PostgreSQL（部署）/ SQLite（开发），前端 `useIdeas` hook 调 REST API
-- 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频导图（markmap 渲染）
+- 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频工具（Tab：思维导图 / Markdown 笔记 / AI 封面）
 - 后端：Python FastAPI + PostgreSQL（部署）/ SQLite（开发）
 - 包管理器：pnpm
 
@@ -60,7 +60,10 @@ pnpm run build
         ├── IdeaCard.jsx        # 灵感卡片
         ├── IdeaList.jsx        # 列表视图
         ├── BoardView.jsx       # 看板视图
+        ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/笔记/封面切换）
         ├── VideoMindmap.jsx    # 视频导图
+        ├── VideoNote.jsx       # 链接转 Markdown 笔记
+        ├── VideoCover.jsx      # 链接转 AI 封面图
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
         └── EmptyState.jsx      # 空状态
@@ -83,9 +86,9 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频导图：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 生成 markmap 思维导图渲染
+9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 三种输出（markmap 思维导图 / Markdown 笔记 / AI 封面图）
 
-## 视频导图链路
+## 视频工具链路
 
 ```
 视频号/抖音链接
@@ -94,11 +97,14 @@ pnpm run build
   → ffmpeg 拆解：提取 audio.wav + 场景检测抽关键帧（720px，scene 阈值 0.3）
   → 信息提取：
       ├─ ASR 语音转写（Coze 云，说的话）→ transcript.txt
-      └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL 逐帧理解 → ocr_result.txt
-  → 组装 low_cost_material.json → LLM/模板生成 markmap 思维导图
+      └─ VLM 视觉理解（转写为空时触发）→ Qwen3-VL 逐帧理解 → ocr_result.txt
+  → 组装 low_cost_material.json → LLM 生成三种输出之一：
+      ├─ generate_mindmap()      → markmap 思维导图
+      ├─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
+      └─ generate_image_prompt() → 文生图提示词 → SiliconFlow 出图（AI 封面）
 ```
 
-- **VLM**：`server/llm.py` 的 `describe_image()`，图片转 base64，调 `VLM_MODEL`（默认 `Qwen/Qwen3-VL-8B-Instruct`），上限 `VLM_MAX_FRAMES`（默认 8 帧）
+- **VLM**：`server/llm.py` 的 `describe_image()`，图片转 base64，调 `VLM_MODEL`（默认 `Qwen/Qwen3-VL-32B-Instruct`），上限 `VLM_MAX_FRAMES`（默认 8 帧）
 - **降级**：VLM 未配 key → 回退 tesseract OCR（`ocr_frames_tesseract`）→ 都不可用则跳过
 - **场景检测**：`extract_media` 用 `select='gt(scene,0.3)'` + `-vsync vfr` 只抽画面变化的帧
 
@@ -108,9 +114,10 @@ pnpm run build
 |---|---|
 | `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） |
-| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（导图 + VLM 共用） |
-| `LLM_MODEL` | 导图文本模型（默认 Qwen/Qwen2.5-7B-Instruct） |
-| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（文本 + VLM + 文生图共用） |
+| `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） |
+| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image，AI 封面） |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） |
 
 ## 代码规范

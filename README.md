@@ -18,7 +18,10 @@
 │   │   ├── IdeaCard.jsx    # 灵感卡片
 │   │   ├── IdeaList.jsx    # 列表视图
 │   │   ├── BoardView.jsx   # 看板视图（按标签分列）
+│   │   ├── VideoTools.jsx  # 视频工具 Tab 容器（导图/笔记/封面切换）
 │   │   ├── VideoMindmap.jsx# 视频思维导图
+│   │   ├── VideoNote.jsx   # 链接转 Markdown 笔记
+│   │   ├── VideoCover.jsx  # 链接转 AI 封面图
 │   │   ├── Sidebar.jsx     # 侧边栏
 │   │   ├── SearchBar.jsx   # 搜索栏
 │   │   └── EmptyState.jsx  # 空状态
@@ -34,9 +37,10 @@
 │   ├── app.py              # FastAPI 主入口（含 API 路由）
 │   ├── db.py               # 数据库配置
 │   ├── models.py           # 数据模型
-│   ├── llm.py              # LLM 接口（可选）
+│   ├── llm.py              # LLM 接口（文本/VLM/文生图提示词）
 │   ├── requirements.txt    # Python 依赖
 │   ├── start.sh            # 启动脚本
+│   ├── migrations/         # 生产库建表 SQL
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   └── skills/             # 视频解析技能脚本
 ├── .coze                   # 部署配置
@@ -112,14 +116,17 @@ sh build-and-commit.sh
 - 编辑/删除/置顶
 - 数据导入/导出（JSON）
 - 看板视图：按标签分列，拖拽打标签
-- 视频导图：粘贴视频链接 → 解析下载 → ASR 转写 + VLM 视觉理解 → 思维导图
+- 视频工具（粘贴视频号/抖音链接 → 解析下载 → ASR 转写 + VLM 视觉理解）：
+  - 视频导图：生成 markmap 思维导图
+  - Markdown 笔记：生成结构化笔记（可切详细模式）
+  - AI 封面：生成波普漫画风封面图（文生图）
 - 响应式布局
 
 ## 数据存储
 
 本地开发使用 `server/ideabox.db`（SQLite，首次启动自动建表）；生产环境（Coze 部署）通过环境变量 `PGDATABASE_URL` 连接 PostgreSQL。数据访问一律通过后端 API，前端不直接读写数据库。
 
-## 视频导图（核心链路）
+## 视频工具（核心链路）
 
 ```
 粘贴视频号/抖音链接
@@ -128,8 +135,11 @@ sh build-and-commit.sh
   → ffmpeg 拆解（提取音频 + 场景检测抽帧）
   → 信息提取：
       ├─ ASR 语音转写（Coze 云，说的话）
-      └─ VLM 视觉理解（Qwen-VL，图片内容 + 文字，转写为空时触发）
-  → 组装导图素材 → LLM/模板生成 markmap 思维导图
+      └─ VLM 视觉理解（Qwen3-VL，图片内容 + 文字，转写为空时触发）
+  → 组装 low_cost_material.json → LLM 生成三种输出之一：
+      ├─ 思维导图（markmap 格式）
+      ├─ Markdown 笔记（detail 可切详细模式）
+      └─ 文生图提示词 → SiliconFlow 出图（AI 封面）
 ```
 
 ## 环境变量（server/.env）
@@ -138,10 +148,11 @@ sh build-and-commit.sh
 |---|---|---|
 | `PGDATABASE_URL` | PostgreSQL 连接串（不设则回退 SQLite） | 生产必需 |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） | 视频号功能 |
-| `LLM_API_KEY` | 硅基流动 API key（导图 + VLM 共用） | 深度导图 |
+| `LLM_API_KEY` | 硅基流动 API key（文本/VLM/文生图共用） | 深度功能 |
 | `LLM_BASE_URL` | 硅基流动地址（默认已配） | — |
-| `LLM_MODEL` | 导图文本模型（默认 Qwen2.5-7B） | — |
-| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-8B-Instruct） | — |
+| `LLM_MODEL` | 文本模型（默认 GLM-5.2） | — |
+| `VLM_MODEL` | 视觉理解模型（默认 Qwen3-VL-32B） | — |
+| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image） | AI 封面 |
 | `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
 
 ⚠️ `.env` 已 gitignore，**不要提交密钥**。Coze 部署在控制台配置环境变量。
