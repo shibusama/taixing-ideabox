@@ -183,7 +183,7 @@ def _template_note(low_cost_material):
 
 # ---------- 公开接口 ----------
 
-def generate_mindmap(low_cost_material):
+def generate_mindmap(low_cost_material, _preview=""):
     """
     根据视频素材生成 Markmap 思维导图
     返回: Markdown 格式的思维导图文本
