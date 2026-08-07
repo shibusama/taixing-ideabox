@@ -28,7 +28,7 @@ from pydantic import BaseModel
 import db as dbmod
 import llm
 from db import SessionLocal, init_db
-from models import Idea, Mindmap, Tag, Task
+from models import Idea, Mindmap, Note, Tag, Task
 
 BASE_DIR = pathlib.Path(__file__).parent
 
@@ -358,7 +358,7 @@ def _load_legacy_cache(url_hash: str) -> dict | None:
     url = data.get("url") or ""
     if md:
         with SessionLocal() as db:
-            db.add(Mindmap(url_hash=url_hash, url=url, mindmap_md=md))
+            db.add(Mindmap(url_hash=url_hash, url=url, mindmap_md=md, created_at=_now_ms()))
             db.commit()
     return {"id": url_hash, "cached": True, "mindmap_md": md} if md else None
 
@@ -369,6 +369,43 @@ def _get_cached_mindmap(url_hash: str) -> dict | None:
         if row:
             return {"id": url_hash, "cached": True, "mindmap_md": row.mindmap_md}
     return _load_legacy_cache(url_hash)
+
+
+def _prepare_material(key: str, url: str):
+    """Run prepare_video.py once -> (low_cost, transcript_preview). Reuses existing work dir."""
+    work_dir = WORK_ROOT / key
+    low_cost_path = work_dir / "low_cost_material.json"
+    if low_cost_path.exists():
+        low_cost = json.loads(low_cost_path.read_text(encoding="utf-8"))
+        preview = _read_optional(work_dir / "transcript_preview.txt")
+        return low_cost, preview
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SKILL_SCRIPT),
+            "--url",
+            url,
+            "--work-dir",
+            str(work_dir),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=1200,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        tail_lines = [ln for ln in stderr.splitlines() if ln.strip()][-4:]
+        raise RuntimeError("prepare_video.py failed: " + " | ".join(tail_lines[-2:]))
+
+    if not low_cost_path.exists():
+        raise RuntimeError("low_cost_material.json was not produced")
+    low_cost = json.loads(low_cost_path.read_text(encoding="utf-8"))
+    preview = _read_optional(work_dir / "transcript_preview.txt")
+    return low_cost, preview
 
 
 def _run_task(task_id: str, url: str):
@@ -385,40 +422,62 @@ def _run_task(task_id: str, url: str):
         if cached:
             result = cached
         else:
-            work_dir = WORK_ROOT / key
-            work_dir.mkdir(parents=True, exist_ok=True)
-
-            proc = subprocess.run(
-                [
-                    sys.executable,
-                    str(SKILL_SCRIPT),
-                    "--url",
-                    url,
-                    "--work-dir",
-                    str(work_dir),
-                ],
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=1200,
-            )
-            if proc.returncode != 0:
-                stderr = proc.stderr.strip()
-                tail_lines = [ln for ln in stderr.splitlines() if ln.strip()][-4:]
-                raise RuntimeError("prepare_video.py failed: " + " | ".join(tail_lines[-2:]))
-
-            low_cost_path = work_dir / "low_cost_material.json"
-            if not low_cost_path.exists():
-                raise RuntimeError("low_cost_material.json was not produced")
-            low_cost = json.loads(low_cost_path.read_text(encoding="utf-8"))
-
-            preview = _read_optional(work_dir / "transcript_preview.txt")
+            low_cost, preview = _prepare_material(key, url)
             mindmap_md = llm.generate_mindmap(low_cost, preview)
 
             result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
             with SessionLocal() as db:
-                db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md))
+                db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
+                db.commit()
+
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "done"
+                task.result = result
+                db.commit()
+    except Exception as exc:
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "error"
+                task.error = str(exc)
+                db.commit()
+
+
+def _get_cached_note(url_hash: str) -> dict | None:
+    with SessionLocal() as db:
+        row = db.query(Note).filter(Note.url_hash == url_hash).first()
+        if row:
+            return {
+                "id": url_hash,
+                "cached": True,
+                "note_md": row.note_md,
+                "detail": bool(row.detail),
+            }
+    return None
+
+
+def _run_note_task(task_id: str, url: str, detail: bool = False):
+    """Background job: download/transcribe -> LLM note -> persist result."""
+    key = cache_key(url)
+    try:
+        with SessionLocal() as db:
+            task = db.get(Task, task_id)
+            if task:
+                task.status = "running"
+                db.commit()
+
+        cached = _get_cached_note(key)
+        if cached and cached.get("detail") == detail:
+            result = cached
+        else:
+            low_cost, preview = _prepare_material(key, url)
+            note_md = llm.generate_note(low_cost, url, preview, detail=detail)
+
+            result = {"id": key, "cached": False, "note_md": note_md, "detail": detail}
+            with SessionLocal() as db:
+                db.add(Note(url_hash=key, url=url, note_md=note_md, detail=detail, created_at=_now_ms()))
                 db.commit()
 
         with SessionLocal() as db:
@@ -456,12 +515,53 @@ def create_mindmap(req: MindmapRequest):
     cached = _get_cached_mindmap(key)
     if cached:
         return {"task_id": None, "result": cached}
+    now = _now_ms()
     task_id = uuid.uuid4().hex[:12]
     with SessionLocal() as db:
-        db.add(Task(task_id=task_id, url=url, status="pending"))
+        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
         db.commit()
     _executor.submit(_run_task, task_id, url)
     return {"task_id": task_id}
+
+
+# ---------------------------------------------------------------------------
+# Note pipeline (link -> Markdown note, reuses the same video material)
+# ---------------------------------------------------------------------------
+
+class NoteRequest(BaseModel):
+    url: str
+    detail: bool = False
+
+
+@app.post("/api/note")
+def create_note(req: NoteRequest):
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        return {"task_id": None, "error": "请提供有效的链接"}
+    key = cache_key(url)
+    cached = _get_cached_note(key)
+    if cached and cached.get("detail") == req.detail:
+        return {"task_id": None, "result": cached}
+    now = _now_ms()
+    task_id = uuid.uuid4().hex[:12]
+    with SessionLocal() as db:
+        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
+        db.commit()
+    _executor.submit(_run_note_task, task_id, url, req.detail)
+    return {"task_id": task_id}
+
+
+@app.get("/api/note/{task_id}")
+def get_note(task_id: str):
+    with SessionLocal() as db:
+        task = db.get(Task, task_id)
+    if task is None:
+        return {"status": "error", "error": "task not found"}
+    return {
+        "status": task.status,
+        "result": task.result,
+        "error": task.error,
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -40,6 +40,41 @@ SYSTEM_PROMPT = (
     "- 只输出 markdown 思维导图本身，不要任何多余解释或代码块包裹\n"
 )
 
+NOTE_SYSTEM_PROMPT = (
+    "你是内容分析师。根据提供的视频/图文元信息与转录文本，生成一份结构化的 Markdown 笔记。\n"
+    "要求：\n"
+    "- 以 `# 标题` 开头（概括内容主题）\n"
+    "- 必须包含：来源信息、一句话总结、要点归纳\n"
+    "- 时间线、金句、行动建议仅在转录文本充分时补充；转录不足时明确标注“转录不完整”\n"
+    "- 只输出 Markdown 笔记本身，不要任何多余解释或代码块包裹\n"
+)
+
+# 标准笔记 vs 详细笔记：detail=True 时追加结构分析部分
+NOTE_TEMPLATE = """\
+# {title}
+
+> 来源：{url}
+
+## 基本信息
+
+- 平台：{platform}
+- 作者：{author}
+- 时长：{duration}
+
+## 一句话总结
+
+{summary}
+
+## 要点归纳
+
+{key_points}
+
+## 转录情况
+
+- 状态：{transcript_status}
+{transcript_detail}
+"""
+
 
 def _template_mindmap(low_cost):
     """Fallback: build a useful mindmap from metadata + sampled transcript only."""
@@ -176,3 +211,134 @@ def describe_image(image_path, prompt="请描述这张图片的内容，提取�
     with urllib.request.urlopen(req, timeout=120) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return data["choices"][0]["message"]["content"].strip()
+
+
+def _template_note(low_cost, url, detail=False):
+    """Fallback: build a standard note from metadata + sampled transcript only."""
+    meta = low_cost.get("metadata", {})
+    segments = low_cost.get("selected_segments", [])
+    media = low_cost.get("media_info") or {}
+    fmt = media.get("format") or {}
+    transcript_stats = low_cost.get("transcript") or {}
+    has_transcript = bool(transcript_stats.get("available") or segments)
+
+    duration = ""
+    if fmt.get("duration"):
+        try:
+            duration = f"{round(float(fmt['duration']))} 秒"
+        except (TypeError, ValueError):
+            duration = ""
+    if not duration and transcript_stats.get("duration"):
+        duration = f"{transcript_stats['duration']} 秒"
+
+    title = (meta.get("description") or "视频笔记").strip()[:80] or "视频笔记"
+    lines = [
+        f"# {title}",
+        "",
+        f"> 来源：{url}",
+        "",
+        "## 基本信息",
+        "",
+        f"- 平台: {meta.get('platform') or '未知'}",
+        f"- 作者: {meta.get('author') or '未知'}",
+        f"- 时长: {duration or '未知'}",
+        "",
+        "## 一句话总结",
+        "",
+        "- （未配置 LLM，暂无法生成总结）",
+        "",
+        "## 要点归纳",
+        "",
+    ]
+    if has_transcript and segments:
+        lines.append("- 转录采样：")
+        for row in segments:
+            stamp = f"{row.get('start', 0):.0f}s"
+            text = (row.get("text") or "").strip()
+            if text:
+                lines.append(f"  - [{stamp}] {text[:80]}")
+    else:
+        lines.append("- 暂无转写文本（未安装转写服务或转写失败）")
+
+    lines.append("")
+    lines.append("## 说明")
+    lines.append("- 配置 LLM_API_KEY 后可生成更详细的笔记")
+    lines.append("- 设置环境变量 LLM_PROVIDER + LLM_BASE_URL + LLM_MODEL 即可启用")
+    if detail:
+        lines.append("")
+        lines.append("## 结构分析")
+        lines.append("- （未配置 LLM，暂无法生成结构分析）")
+    return "\n".join(lines)
+
+
+def generate_note(low_cost, url, transcript_preview="", detail=False):
+    """Return a structured Markdown note for the given content."""
+    provider = os.environ.get("LLM_PROVIDER", "none").lower()
+    api_key = os.environ.get("LLM_API_KEY", "")
+
+    meta = low_cost.get("metadata", {})
+    segments = low_cost.get("selected_segments", [])
+    transcript_stats = low_cost.get("transcript") or {}
+    has_transcript = bool(transcript_stats.get("available") or segments)
+
+    media = low_cost.get("media_info") or {}
+    fmt = media.get("format") or {}
+    duration = ""
+    if fmt.get("duration"):
+        try:
+            duration = f"{round(float(fmt['duration']))} 秒"
+        except (TypeError, ValueError):
+            duration = ""
+    if not duration and transcript_stats.get("duration"):
+        duration = f"{transcript_stats['duration']} 秒"
+
+    title = (meta.get("description") or "视频笔记").strip()[:80] or "视频笔记"
+
+    if provider == "none" or not api_key:
+        return _template_note(low_cost, url, detail=detail)
+
+    sections = (
+        "按以下 Markdown 结构生成（只输出笔记正文）：\n"
+        f"# {title}\n\n"
+        f"> 来源：{url}\n\n"
+        "## 基本信息\n"
+        "- 平台/作者/时长（用给出的元信息填充）\n\n"
+        "## 一句话总结\n"
+        "- 用 1-2 句话概括内容\n\n"
+        "## 要点归纳\n"
+        "- 3-7 条核心要点，每条一行\n"
+    )
+    if detail:
+        sections += (
+            "## 结构分析\n"
+            "- 分析内容结构：开场如何抓人、信息如何推进、高潮与结尾\n"
+            "## 可复用方法\n"
+            "- 提炼可迁移的表达/方法，附失败边界\n"
+        )
+    sections += (
+        f"## 转录情况\n"
+        f"- 状态：{'完整转录' if has_transcript else '转录不完整'}\n"
+    )
+    if not has_transcript:
+        sections += "- 转录文本不足，要点仅基于元信息，请明确标注“转录不完整”\n"
+
+    user_prompt = (
+        f"视频/图文信息:\n"
+        f"- 平台: {meta.get('platform')}\n"
+        f"- 作者: {meta.get('author')}\n"
+        f"- 描述: {meta.get('description')}\n"
+        f"- 时长: {duration}\n\n"
+        f"转录采样文本:\n{transcript_preview or '(无)'}\n\n"
+        f"{sections}"
+    )
+    try:
+        return _chat_completion(
+            provider,
+            [
+                {"role": "system", "content": NOTE_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+    except Exception as exc:
+        # Fall back to template so the pipeline never hard-fails on LLM issues.
+        return _template_note(low_cost, url, detail=detail) + f"\n\n> LLM 生成失败，已回退模板: {exc}"

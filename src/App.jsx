@@ -3,7 +3,7 @@ import Header from './components/Header'
 import IdeaInput from './components/IdeaInput'
 import IdeaList from './components/IdeaList'
 import BoardView from './components/BoardView'
-import VideoMindmap from './components/VideoMindmap'
+import VideoTools from './components/VideoTools'
 import Sidebar from './components/Sidebar'
 import SearchBar from './components/SearchBar'
 import EmptyState from './components/EmptyState'
@@ -161,7 +161,7 @@ export default function App() {
             {/* Main content */}
             <main className={`flex-1 min-w-0 mx-auto lg:mx-0 ${view === 'video' ? 'max-w-5xl' : 'max-w-3xl'}`}>
               {view === 'video' ? (
-                <VideoMindmap />
+                <VideoTools />
               ) : (
                 <>
               {/* Quick capture */}

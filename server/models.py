@@ -59,6 +59,16 @@ class Mindmap(Base):
     created_at = Column(Float, nullable=False)
 
 
+class Note(Base):
+    __tablename__ = "notes"
+
+    url_hash = Column(String, primary_key=True)
+    url = Column(Text, nullable=False)
+    note_md = Column(Text, nullable=False)
+    detail = Column(Boolean, nullable=False, default=False)
+    created_at = Column(Float, nullable=False)
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
