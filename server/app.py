@@ -586,33 +586,20 @@ def _get_cached_cover(url_hash: str) -> dict | None:
 
 
 def _text_to_image(prompt: str) -> str:
-    """Call SiliconFlow /images/generations, return the image URL."""
-    import urllib.request
+    """Use Coze ImageGenerationClient to generate image, return the image URL."""
+    from coze_coding_dev_sdk import ImageGenerationClient
+    from coze_coding_utils.runtime_ctx.context import new_context
 
-    base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
-    if not base_url:
-        base_url = "https://api.siliconflow.cn/v1"
-    api_key = os.environ.get("LLM_API_KEY", "")
-    model = os.environ.get("IMAGE_MODEL", "Tongyi-MAI/Z-Image")
-    image_size = os.environ.get("IMAGE_SIZE", "1024x1024")
+    ctx = new_context(method="generate")
+    client = ImageGenerationClient(ctx=ctx)
 
-    payload = {"model": model, "prompt": prompt, "image_size": image_size}
-    req = urllib.request.Request(
-        f"{base_url}/images/generations",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    images = data.get("images") or []
-    url = images[0].get("url") if images else ""
-    if not url:
-        raise RuntimeError("text-to-image API returned no image url")
-    return url
+    model = os.environ.get("IMAGE_MODEL", "doubao-seedream-4-5-251128")
+    size = os.environ.get("IMAGE_SIZE", "1024x1024")
+
+    resp = client.generate(prompt=prompt, model=model, size=size)
+    if not resp.success:
+        raise RuntimeError(f"Coze image generation failed: {resp.error_messages}")
+    return resp.image_urls[0]
 
 
 def _run_cover_task(task_id: str, url: str):

@@ -1,397 +1,323 @@
-"""LLM integration point for mindmap generation.
-
-Provider is selected via env vars:
-  LLM_PROVIDER = none | openai-compatible | siliconflow   (default: none -> template fallback)
-  LLM_API_KEY  = your api key
-  LLM_BASE_URL = e.g. https://api.siliconflow.cn/v1 (OpenAI-compatible chat completions)
-  LLM_MODEL    = e.g. Qwen/Qwen2.5-7B-Instruct
-
-Until an API key is configured the server returns a template mindmap built from
-video metadata + sampled transcript, so the whole pipeline stays testable.
-"""
+# LLM 接口模块
+# 支持两种 Provider：
+#   LLM_PROVIDER=coze（默认）→ 使用 Coze 平台内置模型（LLMClient）
+#   LLM_PROVIDER=siliconflow → 使用硅基流动（urllib 直调）
+#   LLM_PROVIDER=none        → 模板回退（无网络请求）
 
 import json
 import os
 import pathlib
+import re
+import base64
 import urllib.request
+import urllib.error
 
+# ---------- 工具函数 ----------
+
+_BASE_DIR = pathlib.Path(__file__).resolve().parent
 
 def _load_dotenv():
-    """Minimal .env loader (server/.env), never overrides real env vars."""
-    env_path = pathlib.Path(__file__).parent / ".env"
-    if not env_path.exists():
-        return
-    for line in env_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    """加载 server/.env 文件"""
+    env_path = _BASE_DIR / ".env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip())
 
 
-_load_dotenv()
-
-SYSTEM_PROMPT = (
-    "你是视频内容分析师。根据提供的视频元信息与转录文本，生成一份 Markdown 思维导图（markmap 格式）。\n"
-    "要求：\n"
-    "- 根节点用 `# 标题`（概括视频主题）\n"
-    "- 用 `##` / `###` 层级组织分支\n"
-    "- 分支覆盖：一句话总结、核心观点、时间线（如有）、行动建议（如有）\n"
-    "- 只输出 markdown 思维导图本身，不要任何多余解释或代码块包裹\n"
-)
-
-NOTE_SYSTEM_PROMPT = (
-    "你是内容分析师。根据提供的视频/图文元信息与转录文本，生成一份结构化的 Markdown 笔记。\n"
-    "要求：\n"
-    "- 以 `# 标题` 开头（概括内容主题）\n"
-    "- 必须包含：来源信息、一句话总结、要点归纳\n"
-    "- 时间线、金句、行动建议仅在转录文本充分时补充；转录不足时明确标注“转录不完整”\n"
-    "- 只输出 Markdown 笔记本身，不要任何多余解释或代码块包裹\n"
-)
-
-# 标准笔记 vs 详细笔记：detail=True 时追加结构分析部分
-NOTE_TEMPLATE = """\
-# {title}
-
-> 来源：{url}
-
-## 基本信息
-
-- 平台：{platform}
-- 作者：{author}
-- 时长：{duration}
-
-## 一句话总结
-
-{summary}
-
-## 要点归纳
-
-{key_points}
-
-## 转录情况
-
-- 状态：{transcript_status}
-{transcript_detail}
-"""
+def _get_provider():
+    """获取 LLM 提供者（coze / siliconflow / none）"""
+    return os.environ.get("LLM_PROVIDER", "coze").lower().strip()
 
 
-def _template_mindmap(low_cost):
-    """Fallback: build a useful mindmap from metadata + sampled transcript only."""
-    meta = low_cost.get("metadata", {})
-    segments = low_cost.get("selected_segments", [])
-    media = low_cost.get("media_info") or {}
-    fmt = media.get("format") or {}
+# ---------- Coze 平台 Provider ----------
 
-    lines = []
-    title = (meta.get("description") or "视频摘要").strip() or "视频摘要"
-    lines.append(f"# {title[:80]}")
+def _chat_completion_coze(messages, temperature=0.4):
+    """使用 Coze SDK 的 LLMClient 调用豆包模型"""
+    from coze_coding_dev_sdk import LLMClient
+    from coze_coding_utils.runtime_ctx.context import new_context
+    from langchain_core.messages import HumanMessage, SystemMessage
 
-    lines.append("## 视频信息")
-    if meta.get("platform"):
-        lines.append(f"- 平台: {meta['platform']}")
-    if meta.get("author"):
-        lines.append(f"- 作者: {meta['author']}")
-    if fmt.get("duration"):
-        lines.append(f"- 时长: {round(float(fmt['duration']))} 秒")
-    lines.append("- 状态: 模板导图（LLM 未配置）")
+    ctx = new_context(method="invoke")
+    client = LLMClient(ctx=ctx)
 
-    if segments:
-        lines.append("## 转录采样")
-        for row in segments:
-            stamp = f"{row.get('start', 0):.0f}s"
-            text = (row.get("text") or "").strip()
-            if text:
-                lines.append(f"- [{stamp}] {text[:80]}")
-    else:
-        lines.append("## 转录")
-        lines.append("- 暂无转写文本（未安装 faster-whisper 或转写失败）")
+    model = os.environ.get("LLM_MODEL", "doubao-seed-2-0-pro-260215")
 
-    lines.append("## 说明")
-    lines.append("- 配置 LLM_API_KEY 后可生成更详细的思维导图")
-    lines.append("- 设置环境变量 LLM_PROVIDER + LLM_BASE_URL + LLM_MODEL 即可启用")
-    return "\n".join(lines)
+    lc_messages = []
+    for msg in messages:
+        if msg["role"] == "system":
+            lc_messages.append(SystemMessage(content=msg["content"]))
+        elif msg["role"] == "user":
+            lc_messages.append(HumanMessage(content=msg["content"]))
+
+    resp = client.invoke(messages=lc_messages, model=model, temperature=temperature)
+    return resp.content
 
 
-def _chat_completion(provider, messages):
-    base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
-    if provider == "siliconflow" and not base_url:
-        base_url = "https://api.siliconflow.cn/v1"
+def _describe_image_coze(image_path, prompt="请描述这张图片的内容，包括画面元素、文字、颜色和构图。"):
+    """使用 Coze SDK 的 LLMClient 调用豆包模型分析图片"""
+    from coze_coding_dev_sdk import LLMClient
+    from coze_coding_utils.runtime_ctx.context import new_context
+    from langchain_core.messages import HumanMessage
+
+    ctx = new_context(method="invoke")
+    client = LLMClient(ctx=ctx)
+
+    model = os.environ.get("VLM_MODEL", "doubao-seed-2-0-pro-260215")
+
+    b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
+    data_url = f"data:image/jpeg;base64,{b64}"
+
+    messages = [
+        HumanMessage(content=[
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url}},
+        ])
+    ]
+
+    resp = client.invoke(messages=messages, model=model, temperature=0.2)
+    return resp.content
+
+
+# ---------- 硅基流动 Provider ----------
+
+def _chat_completion(messages, temperature=0.4):
+    """调用硅基流动 OpenAI 兼容 API"""
+    api_key = os.environ.get("LLM_API_KEY", "")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions")
     model = os.environ.get("LLM_MODEL", "zai-org/GLM-5.2")
-    api_key = os.environ.get("LLM_API_KEY", "")
 
-    payload = {"model": model, "messages": messages, "temperature": 0.4}
+    payload = json.dumps({"model": model, "messages": messages, "temperature": temperature}).encode()
     req = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        base_url,
+        data=payload,
         headers={
-            "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
         },
-        method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    resp = urllib.request.urlopen(req, timeout=120)
+    data = json.loads(resp.read().decode())
+    return data["choices"][0]["message"]["content"]
 
 
-def generate_mindmap(low_cost, transcript_preview="", analysis=None):
-    """Return markmap-format markdown for the given video material."""
-    provider = os.environ.get("LLM_PROVIDER", "none").lower()
-    api_key = os.environ.get("LLM_API_KEY", "")
+def describe_image(image_path, prompt="请描述这张图片的内容，包括画面元素、文字、颜色和构图。"):
+    """调用 VLM 视觉模型分析图片"""
+    provider = _get_provider()
+    if provider == "coze":
+        return _describe_image_coze(image_path, prompt)
 
-    if provider == "none" or not api_key:
-        return _template_mindmap(low_cost)
-
-    meta = low_cost.get("metadata", {})
-    segments = low_cost.get("selected_segments", [])
-    user_prompt = (
-        f"视频信息:\n"
-        f"- 平台: {meta.get('platform')}\n"
-        f"- 作者: {meta.get('author')}\n"
-        f"- 描述: {meta.get('description')}\n\n"
-        f"转录采样文本:\n{transcript_preview or '(无)'}\n\n"
-        f"请生成 markmap 思维导图 markdown。"
-    )
-    try:
-        return _chat_completion(
-            provider,
-            [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-        )
-    except Exception as exc:
-        # Fall back to template so the pipeline never hard-fails on LLM issues.
-        return _template_mindmap(low_cost) + f"\n\n> LLM 生成失败，已回退模板: {exc}"
-
-
-def describe_image(image_path, prompt="请描述这张图片的内容，提取所有可见的文字、图表、产品或关键信息。"):
-    """Describe an image using a vision LLM (VLM) via the same OpenAI-compatible channel.
-
-    Reuses LLM_BASE_URL / LLM_API_KEY; model is VLM_MODEL (default Qwen-VL on SiliconFlow).
-    Returns a text description, or raises on failure.
-    """
-    import base64
-
+    # 硅基流动 VLM
     api_key = os.environ.get("LLM_API_KEY", "")
     if not api_key:
-        raise RuntimeError("LLM_API_KEY 未配置")
+        raise ValueError("LLM_API_KEY not set for VLM image analysis")
 
-    base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
-    if not base_url:
-        base_url = "https://api.siliconflow.cn/v1"
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions")
     model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-32B-Instruct")
 
     b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
     data_url = f"data:image/jpeg;base64,{b64}"
 
-    payload = {
+    payload = json.dumps({
         "model": model,
         "messages": [
             {
                 "role": "user",
                 "content": [
-                    {"type": "image_url", "image_url": {"url": data_url}},
                     {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
                 ],
             }
         ],
         "temperature": 0.2,
-    }
+    }).encode()
+
     req = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
+        base_url,
+        data=payload,
         headers={
-            "Content-Type": "application/json",
             "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
         },
-        method="POST",
     )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    resp = urllib.request.urlopen(req, timeout=120)
+    data = json.loads(resp.read().decode())
+    return data["choices"][0]["message"]["content"]
 
 
-def _template_note(low_cost, url, detail=False):
-    """Fallback: build a standard note from metadata + sampled transcript only."""
-    meta = low_cost.get("metadata", {})
-    segments = low_cost.get("selected_segments", [])
-    media = low_cost.get("media_info") or {}
-    fmt = media.get("format") or {}
-    transcript_stats = low_cost.get("transcript") or {}
-    has_transcript = bool(transcript_stats.get("available") or segments)
+# ---------- 模板回退（无网络） ----------
 
-    duration = ""
-    if fmt.get("duration"):
-        try:
-            duration = f"{round(float(fmt['duration']))} 秒"
-        except (TypeError, ValueError):
-            duration = ""
-    if not duration and transcript_stats.get("duration"):
-        duration = f"{transcript_stats['duration']} 秒"
+def _template_mindmap(low_cost_material):
+    """基于视频元数据生成简易思维导图"""
+    title = low_cost_material.get("title", "未知视频")
+    desc = low_cost_material.get("desc", "")
+    author = low_cost_material.get("author", "未知作者")
+    return f"""# {title}
 
-    title = (meta.get("description") or "视频笔记").strip()[:80] or "视频笔记"
-    lines = [
-        f"# {title}",
-        "",
-        f"> 来源：{url}",
-        "",
-        "## 基本信息",
-        "",
-        f"- 平台: {meta.get('platform') or '未知'}",
-        f"- 作者: {meta.get('author') or '未知'}",
-        f"- 时长: {duration or '未知'}",
-        "",
-        "## 一句话总结",
-        "",
-        "- （未配置 LLM，暂无法生成总结）",
-        "",
-        "## 要点归纳",
-        "",
-    ]
-    if has_transcript and segments:
-        lines.append("- 转录采样：")
-        for row in segments:
-            stamp = f"{row.get('start', 0):.0f}s"
-            text = (row.get("text") or "").strip()
-            if text:
-                lines.append(f"  - [{stamp}] {text[:80]}")
+## 基本信息
+- **作者**: {author}
+- **描述**: {desc}
+
+## 视频概要
+（视频内容摘要需要通过 ASR 转写获得，当前为无网络回退模式）
+"""
+
+
+def _template_note(low_cost_material):
+    title = low_cost_material.get("title", "未知视频")
+    desc = low_cost_material.get("desc", "")
+    author = low_cost_material.get("author", "未知作者")
+    return f"""# 视频笔记：{title}
+
+**作者**: {author}  
+**描述**: {desc}
+
+---
+
+> 笔记内容需要通过 ASR 转写获得，当前为无网络回退模式。
+"""
+
+
+# ---------- 公开接口 ----------
+
+def generate_mindmap(low_cost_material):
+    """
+    根据视频素材生成 Markmap 思维导图
+    返回: Markdown 格式的思维导图文本
+    """
+    provider = _get_provider()
+    if provider == "none":
+        return _template_mindmap(low_cost_material)
+
+    title = low_cost_material.get("title", "未知视频")
+    desc = low_cost_material.get("desc", "")
+    author = low_cost_material.get("author", "未知作者")
+    ocr = low_cost_material.get("ocr_text", "")
+    transcript = low_cost_material.get("transcript", "")
+
+    system_prompt = """你是一个思维导图生成专家。请根据视频信息生成一个 Markmap 格式的思维导图。
+要求：
+1. 使用 Markdown 标题层级（# ## ###）表示树形结构
+2. 根节点为视频标题
+3. 第二层为：基本信息、视频内容、关键要点、总结
+4. 内容要具体、有信息量，不要空洞
+5. 如果提供了逐字稿，请基于逐字稿内容生成详细要点
+6. 如果只有元数据，则基于标题和描述合理推断内容结构"""
+
+    user_prompt = f"""视频标题：{title}
+作者：{author}
+描述：{desc}
+{'逐字稿：' + transcript if transcript else ''}
+{'画面文字：' + ocr if ocr else ''}
+"""
+
+    try:
+        if provider == "coze":
+            return _chat_completion_coze([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+        else:
+            # siliconflow
+            return _chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+    except Exception as e:
+        return _template_mindmap(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
+
+
+def generate_note(low_cost_material, detail=False):
+    """
+    根据视频素材生成 Markdown 笔记
+    detail=True → 详细笔记
+    detail=False → 精简笔记
+    """
+    provider = _get_provider()
+    if provider == "none":
+        return _template_note(low_cost_material)
+
+    title = low_cost_material.get("title", "未知视频")
+    desc = low_cost_material.get("desc", "")
+    author = low_cost_material.get("author", "未知作者")
+    ocr = low_cost_material.get("ocr_text", "")
+    transcript = low_cost_material.get("transcript", "")
+
+    if detail:
+        system_prompt = """你是一个笔记整理专家。请根据视频信息生成一份详细的 Markdown 笔记。
+要求：
+1. 包含：标题、作者、时间、核心观点、详细内容、关键引述、个人思考
+2. 结构清晰，使用标题和列表
+3. 如果有逐字稿，请提取关键信息并整理成连贯的笔记"""
     else:
-        lines.append("- 暂无转写文本（未安装转写服务或转写失败）")
+        system_prompt = """你是一个笔记整理专家。请根据视频信息生成一份精简的 Markdown 笔记。
+要求：
+1. 包含：标题、核心观点、关键要点
+2. 简洁明了，控制在 300 字以内
+3. 以要点列表形式呈现"""
 
-    lines.append("")
-    lines.append("## 说明")
-    lines.append("- 配置 LLM_API_KEY 后可生成更详细的笔记")
-    lines.append("- 设置环境变量 LLM_PROVIDER + LLM_BASE_URL + LLM_MODEL 即可启用")
-    if detail:
-        lines.append("")
-        lines.append("## 结构分析")
-        lines.append("- （未配置 LLM，暂无法生成结构分析）")
-    return "\n".join(lines)
+    user_prompt = f"""视频标题：{title}
+作者：{author}
+描述：{desc}
+{'逐字稿：' + transcript if transcript else ''}
+{'画面文字：' + ocr if ocr else ''}
+"""
 
-
-def generate_note(low_cost, url, transcript_preview="", detail=False):
-    """Return a structured Markdown note for the given content."""
-    provider = os.environ.get("LLM_PROVIDER", "none").lower()
-    api_key = os.environ.get("LLM_API_KEY", "")
-
-    meta = low_cost.get("metadata", {})
-    segments = low_cost.get("selected_segments", [])
-    transcript_stats = low_cost.get("transcript") or {}
-    has_transcript = bool(transcript_stats.get("available") or segments)
-
-    media = low_cost.get("media_info") or {}
-    fmt = media.get("format") or {}
-    duration = ""
-    if fmt.get("duration"):
-        try:
-            duration = f"{round(float(fmt['duration']))} 秒"
-        except (TypeError, ValueError):
-            duration = ""
-    if not duration and transcript_stats.get("duration"):
-        duration = f"{transcript_stats['duration']} 秒"
-
-    title = (meta.get("description") or "视频笔记").strip()[:80] or "视频笔记"
-
-    if provider == "none" or not api_key:
-        return _template_note(low_cost, url, detail=detail)
-
-    sections = (
-        "按以下 Markdown 结构生成（只输出笔记正文）：\n"
-        f"# {title}\n\n"
-        f"> 来源：{url}\n\n"
-        "## 基本信息\n"
-        "- 平台/作者/时长（用给出的元信息填充）\n\n"
-        "## 一句话总结\n"
-        "- 用 1-2 句话概括内容\n\n"
-        "## 要点归纳\n"
-        "- 3-7 条核心要点，每条一行\n"
-    )
-    if detail:
-        sections += (
-            "## 结构分析\n"
-            "- 分析内容结构：开场如何抓人、信息如何推进、高潮与结尾\n"
-            "## 可复用方法\n"
-            "- 提炼可迁移的表达/方法，附失败边界\n"
-        )
-    sections += (
-        f"## 转录情况\n"
-        f"- 状态：{'完整转录' if has_transcript else '转录不完整'}\n"
-    )
-    if not has_transcript:
-        sections += "- 转录文本不足，要点仅基于元信息，请明确标注“转录不完整”\n"
-
-    user_prompt = (
-        f"视频/图文信息:\n"
-        f"- 平台: {meta.get('platform')}\n"
-        f"- 作者: {meta.get('author')}\n"
-        f"- 描述: {meta.get('description')}\n"
-        f"- 时长: {duration}\n\n"
-        f"转录采样文本:\n{transcript_preview or '(无)'}\n\n"
-        f"{sections}"
-    )
     try:
-        return _chat_completion(
-            provider,
-            [
-                {"role": "system", "content": NOTE_SYSTEM_PROMPT},
+        if provider == "coze":
+            return _chat_completion_coze([
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
-            ],
-        )
-    except Exception as exc:
-        # Fall back to template so the pipeline never hard-fails on LLM issues.
-        return _template_note(low_cost, url, detail=detail) + f"\n\n> LLM 生成失败，已回退模板: {exc}"
+            ])
+        else:
+            return _chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+    except Exception as e:
+        return _template_note(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
 
 
-IMAGE_PROMPT_SYSTEM = (
-    "你是封面图提示词设计师。根据内容信息生成一段高质量的文生图英文提示词。\n"
-    "要求：\n"
-    "- 风格统一为 pop art comic 波普艺术漫画风（粗轮廓、高饱和对比色、网点、漫画对话框）\n"
-    "- 提炼内容的核心主题/主体，用具体画面呈现，不要出现文字\n"
-    "- 英文输出，60-100 词，只输出提示词本身，不要解释或包装\n"
-)
+def generate_image_prompt(video_metadata, transcript_preview=""):
+    """
+    根据视频元数据生成文生图提示词（用于 AI 封面图）
+    """
+    provider = _get_provider()
+    if provider == "none":
+        return "科技感封面，蓝色调，简洁现代"
 
+    title = video_metadata.get("title", "视频")
+    desc = video_metadata.get("description", video_metadata.get("desc", ""))
 
-def _template_image_prompt(low_cost):
-    """Fallback: build a generic pop-art prompt from metadata only."""
-    meta = low_cost.get("metadata", {})
-    desc = (meta.get("description") or "").strip()
-    topic = desc[:40] or meta.get("platform") or "video"
-    return (
-        f"A pop art comic style illustration about {topic}. "
-        "Bold black outlines, high-contrast vibrant colors, halftone dots, "
-        "comic speech bubble, dramatic composition, retro comic book cover look."
-    )
+    system_prompt = """你是一个 AI 绘图提示词专家。请根据视频信息生成一个高质量的文生图提示词（英文），用于生成视频封面图。
+要求：
+1. 提示词要简洁、具体、可执行
+2. 包含风格、主体、色调、构图
+3. 适合作为视频封面，突出视频主题
+4. 用英文，不超过 100 个词"""
 
+    user_prompt = f"""视频标题：{title}
+描述：{desc}
+{"转写预览：" + transcript_preview[:200] if transcript_preview else ""}
+请生成封面图提示词。"""
 
-def generate_image_prompt(low_cost, transcript_preview="", style="pop art comic"):
-    """Return an English image-generation prompt derived from content."""
-    provider = os.environ.get("LLM_PROVIDER", "none").lower()
-    api_key = os.environ.get("LLM_API_KEY", "")
-
-    meta = low_cost.get("metadata", {})
-    desc = (meta.get("description") or "").strip()
-    topic = desc[:200] or meta.get("platform") or "video"
-
-    if provider == "none" or not api_key:
-        return _template_image_prompt(low_cost)
-
-    user_prompt = (
-        f"内容信息:\n"
-        f"- 平台: {meta.get('platform')}\n"
-        f"- 作者: {meta.get('author')}\n"
-        f"- 描述: {desc}\n\n"
-        f"转录采样:\n{transcript_preview or '(无)'}\n\n"
-        f"请为这段内容生成一段 {style} 风格的英文文生图提示词。"
-    )
     try:
-        return _chat_completion(
-            provider,
-            [
-                {"role": "system", "content": IMAGE_PROMPT_SYSTEM},
+        if provider == "coze":
+            return _chat_completion_coze([
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
-            ],
-        )
-    except Exception:
-        return _template_image_prompt(low_cost)
+            ])
+        else:
+            return _chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+    except Exception as e:
+        return "Modern technology封面, blue tones, clean and simple, professional, high quality, 4k"
+
+
+# 启动时自动加载 .env
+_load_dotenv()
