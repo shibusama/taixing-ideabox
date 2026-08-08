@@ -34,7 +34,8 @@ git push
 |---|---|---|
 | `PGDATABASE_URL` | Postgres 连接串 | ✅ 不设则回退 SQLite，数据不共享/易丢 |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析用） | 用视频号解析功能才需要 |
-| `LLM_API_KEY` | 硅基流动 API key（文本 + VLM + 文生图共用） | 深度导图 / 笔记 / AI 封面 |
+| `LLM_PROVIDER` | `coze`（默认，平台内置）/ `siliconflow`（走硅基流动） | 不设默认 coze |
+| `LLM_API_KEY` | 硅基流动 API key（文本 + VLM + 文生图共用，siliconflow 模式） | 本地深度功能 |
 | `LLM_BASE_URL` | 硅基流动地址（默认 https://api.siliconflow.cn/v1） | — |
 | `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） | — |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） | — |

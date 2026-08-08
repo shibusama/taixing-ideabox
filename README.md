@@ -148,7 +148,8 @@ sh build-and-commit.sh
 |---|---|---|
 | `PGDATABASE_URL` | PostgreSQL 连接串（不设则回退 SQLite） | 生产必需 |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） | 视频号功能 |
-| `LLM_API_KEY` | 硅基流动 API key（文本/VLM/文生图共用） | 深度功能 |
+| `LLM_PROVIDER` | 模型提供商：`coze`（默认，部署）/ `siliconflow`（本地）/ `none`（模板） | — |
+| `LLM_API_KEY` | 硅基流动 API key（文本/VLM/文生图共用，siliconflow 模式） | 本地深度功能 |
 | `LLM_BASE_URL` | 硅基流动地址（默认已配） | — |
 | `LLM_MODEL` | 文本模型（默认 GLM-5.2） | — |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen3-VL-32B） | — |

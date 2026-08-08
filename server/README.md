@@ -105,10 +105,20 @@ HY_TOKEN=your_cookie_string
 2. `VITE_API_BASE` 环境变量（Vite 构建期）
 3. 默认：开发环境 `http://127.0.0.1:8000`；生产环境同源 `/api`（由后端统一服务）
 
-## 启用 LLM 思维导图（可选）
+## 启用 LLM 深度功能（可选）
 
-未配置时后端输出模板导图（元信息 + 转录采样），用于跑通全流程。
-要启用 AI 深度分析导图，创建 `server/.env`（已 gitignore，注意**不要提交 key**）：
+未配置时后端输出模板（元信息 + 转录采样），用于跑通全流程。
+要启用 AI 分析（导图/笔记/封面），配置 `LLM_PROVIDER` 选择模型提供商：
+
+**两种 Provider（`LLM_PROVIDER`，默认 `coze`）**
+
+| Provider | 适用环境 | 模型 |
+|----------|---------|------|
+| `coze` | Coze 部署（有 `coze_coding_dev_sdk`）| 豆包文本 / seedream 文生图 |
+| `siliconflow` | 本地开发（需 API key）| GLM-5.2 / Qwen3-VL-32B / Z-Image |
+| `none` | 无网络 | 模板回退 |
+
+本地开发用 `server/.env`（已 gitignore，注意**不要提交 key**）切到硅基流动：
 
 ```bash
 # 硅基流动（文本模型 + VLM 视觉模型 + 文生图共用 key）
@@ -119,7 +129,8 @@ VLM_MODEL=Qwen/Qwen3-VL-32B-Instruct     # 关键帧视觉理解
 IMAGE_MODEL=Tongyi-MAI/Z-Image           # 文生图（AI 封面）
 ```
 
-> 代码默认值（`server/llm.py` / `server/app.py`）：`LLM_MODEL` = `zai-org/GLM-5.2`，`VLM_MODEL` = `Qwen/Qwen3-VL-32B-Instruct`，`IMAGE_MODEL` = `Tongyi-MAI/Z-Image`。早期默认的 `Qwen2.5-7B-Instruct` 输出大量乱码，已弃用。未配置 key 时全部回退模板。
+> 代码默认值（`server/llm.py` / `server/app.py`）：`LLM_MODEL` = `zai-org/GLM-5.2`，`VLM_MODEL` = `Qwen/Qwen3-VL-32B-Instruct`，`IMAGE_MODEL` = `Tongyi-MAI/Z-Image`（siliconflow 分支）。Coze 分支默认豆包模型。早期默认的 `Qwen2.5-7B-Instruct` 输出大量乱码，已弃用。未配置 key 时全部回退模板。
+> 本地与 Coze 互不影响：`.env` 显式设 `siliconflow` 走硅基流动，Coze 无 `.env` 默认 `coze`。`_text_to_image`（AI 封面出图）同样按 provider 分叉。
 
 ## API
 

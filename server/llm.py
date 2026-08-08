@@ -20,7 +20,7 @@ def _load_dotenv():
     """加载 server/.env 文件"""
     env_path = _BASE_DIR / ".env"
     if env_path.exists():
-        for line in env_path.read_text().splitlines():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
@@ -87,7 +87,10 @@ def _describe_image_coze(image_path, prompt="请描述这张图片的内容，�
 def _chat_completion(messages, temperature=0.4):
     """调用硅基流动 OpenAI 兼容 API"""
     api_key = os.environ.get("LLM_API_KEY", "")
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions").rstrip("/")
+    # 兼容 base URL（…/v1）与完整端点（…/v1/chat/completions）两种写法
+    if not base_url.endswith("/chat/completions"):
+        base_url += "/chat/completions"
     model = os.environ.get("LLM_MODEL", "zai-org/GLM-5.2")
 
     payload = json.dumps({"model": model, "messages": messages, "temperature": temperature}).encode()
@@ -115,7 +118,9 @@ def describe_image(image_path, prompt="请描述这张图片的内容，包括�
     if not api_key:
         raise ValueError("LLM_API_KEY not set for VLM image analysis")
 
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions")
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions").rstrip("/")
+    if not base_url.endswith("/chat/completions"):
+        base_url += "/chat/completions"
     model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-32B-Instruct")
 
     b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
@@ -192,11 +197,17 @@ def generate_mindmap(low_cost_material, _preview=""):
     if provider == "none":
         return _template_mindmap(low_cost_material)
 
-    title = low_cost_material.get("title", "未知视频")
-    desc = low_cost_material.get("desc", "")
-    author = low_cost_material.get("author", "未知作者")
-    ocr = low_cost_material.get("ocr_text", "")
-    transcript = low_cost_material.get("transcript", "")
+    meta = low_cost_material.get("metadata", {})
+    title = meta.get("title") or meta.get("description") or "未知视频"
+    desc = meta.get("description") or ""
+    author = meta.get("author") or "未知作者"
+    ocr = low_cost_material.get("ocr_text") or ""
+    segments = low_cost_material.get("selected_segments") or []
+    transcript = "\n".join(
+        f"[{s.get('start', 0)}-{s.get('end', 0)}] {s.get('text', '')}"
+        for s in segments
+        if s.get("text")
+    )
 
     system_prompt = """你是一个思维导图生成专家。请根据视频信息生成一个 Markmap 格式的思维导图。
 要求：
@@ -240,11 +251,17 @@ def generate_note(low_cost_material, detail=False):
     if provider == "none":
         return _template_note(low_cost_material)
 
-    title = low_cost_material.get("title", "未知视频")
-    desc = low_cost_material.get("desc", "")
-    author = low_cost_material.get("author", "未知作者")
-    ocr = low_cost_material.get("ocr_text", "")
-    transcript = low_cost_material.get("transcript", "")
+    meta = low_cost_material.get("metadata", {})
+    title = meta.get("title") or meta.get("description") or "未知视频"
+    desc = meta.get("description") or ""
+    author = meta.get("author") or "未知作者"
+    ocr = low_cost_material.get("ocr_text") or ""
+    segments = low_cost_material.get("selected_segments") or []
+    transcript = "\n".join(
+        f"[{s.get('start', 0)}-{s.get('end', 0)}] {s.get('text', '')}"
+        for s in segments
+        if s.get("text")
+    )
 
     if detail:
         system_prompt = """你是一个笔记整理专家。请根据视频信息生成一份详细的 Markdown 笔记。
@@ -289,8 +306,9 @@ def generate_image_prompt(video_metadata, transcript_preview=""):
     if provider == "none":
         return "科技感封面，蓝色调，简洁现代"
 
-    title = video_metadata.get("title", "视频")
-    desc = video_metadata.get("description", video_metadata.get("desc", ""))
+    meta = video_metadata.get("metadata", {})
+    title = meta.get("title") or meta.get("description") or "视频"
+    desc = meta.get("description") or ""
 
     system_prompt = """你是一个 AI 绘图提示词专家。请根据视频信息生成一个高质量的文生图提示词（英文），用于生成视频封面图。
 要求：

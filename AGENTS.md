@@ -114,7 +114,8 @@ pnpm run build
 |---|---|
 | `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） |
 | `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） |
-| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（文本 + VLM + 文生图共用） |
+| `LLM_PROVIDER` | 模型提供商：`coze`（默认，部署）/ `siliconflow`（本地）/ `none`（模板） |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） |
 | `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） |
 | `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image，AI 封面） |

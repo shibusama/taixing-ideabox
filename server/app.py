@@ -473,7 +473,7 @@ def _run_note_task(task_id: str, url: str, detail: bool = False):
             result = cached
         else:
             low_cost, preview = _prepare_material(key, url)
-            note_md = llm.generate_note(low_cost, url, preview, detail=detail)
+            note_md = llm.generate_note(low_cost, detail=detail)
 
             result = {"id": key, "cached": False, "note_md": note_md, "detail": detail}
             with SessionLocal() as db:
@@ -590,7 +590,37 @@ def _get_cached_cover(url_hash: str) -> dict | None:
 
 
 def _text_to_image(prompt: str) -> str:
-    """Use Coze ImageGenerationClient to generate image, return the image URL."""
+    """Generate an image from a prompt. Coze on the platform, SiliconFlow locally."""
+    provider = os.environ.get("LLM_PROVIDER", "coze").lower().strip()
+    if provider == "siliconflow":
+        import urllib.request
+
+        base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
+        if not base_url:
+            base_url = "https://api.siliconflow.cn/v1"
+        api_key = os.environ.get("LLM_API_KEY", "")
+        model = os.environ.get("IMAGE_MODEL", "Tongyi-MAI/Z-Image")
+        image_size = os.environ.get("IMAGE_SIZE", "1024x1024")
+
+        payload = {"model": model, "prompt": prompt, "image_size": image_size}
+        req = urllib.request.Request(
+            f"{base_url}/images/generations",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        images = data.get("images") or []
+        url = images[0].get("url") if images else ""
+        if not url:
+            raise RuntimeError("text-to-image API returned no image url")
+        return url
+
+    # coze（默认）：Coze 平台 ImageGenerationClient
     from coze_coding_dev_sdk import ImageGenerationClient
     from coze_coding_utils.runtime_ctx.context import new_context
 
