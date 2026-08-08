@@ -87,5 +87,7 @@ class Task(Base):
     status = Column(String, nullable=False, default="pending")
     result = Column(JSONType, nullable=True)
     error = Column(Text, nullable=True)
+    kind = Column(String, nullable=True)   # mindmap | note | cover（inbox 批量入口用）
+    key = Column(String, nullable=True)    # url_hash，按链接聚合状态
     created_at = Column(Float, nullable=False)
     updated_at = Column(Float, nullable=False)

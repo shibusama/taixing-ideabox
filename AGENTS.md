@@ -122,6 +122,7 @@ pnpm run build
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token（收链接 → 自动入库） |
 
 ## 代码规范
 - 组件使用函数式组件 + Hooks

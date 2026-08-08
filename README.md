@@ -120,6 +120,7 @@ sh build-and-commit.sh
   - 视频导图：生成 markmap 思维导图
   - Markdown 笔记：生成结构化笔记（可切详细模式）
   - AI 封面：生成有内容有文字的信息图/知识卡（文生图）
+  - 收件箱：把链接发给 Telegram bot，自动生成三种内容，网站集中查看
 - 响应式布局
 
 ## 数据存储
@@ -157,6 +158,7 @@ sh build-and-commit.sh
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图方式） | AI 封面 |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
 | `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token（收链接 → 自动入库） | Telegram 收件 |
 | `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
 
 ⚠️ `.env` 已 gitignore，**不要提交密钥**。Coze 部署在控制台配置环境变量。

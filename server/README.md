@@ -160,7 +160,24 @@ ARK_IMAGE_ENDPOINT=https://ark.cn-beijing.volces.com/api/plan/v3/images/generati
 | GET | `/api/note/{task_id}` | `{"status", "result": {"note_md", "detail", "cached"}, "error"}` |
 | POST | `/api/cover` | `{"url"}` → `{"task_id"}` 或缓存命中 `{"result"}` |
 | GET | `/api/cover/{task_id}` | `{"status", "result": {"image_url", "prompt", "cached"}, "error"}` |
+| POST | `/api/inbox` | `{"url"}` → 批量触发三种生成（导图/笔记/封面），返回 `{key, allCached, tasks, cached}` |
+| GET | `/api/inbox/{key}` | 聚合三种生成状态：`{key, url, allDone, kinds}`（缓存兜底） |
+| GET | `/api/inbox-list` | 收件箱列表：按链接聚合的最近收进记录 + 三种状态 |
+| POST | `/telegram/webhook` | Telegram bot 接收消息：提链接 → 触发 inbox → 两步回复 |
+| POST | `/telegram/set-webhook` | 设置 Telegram webhook 到指定公网 URL（部署后调用） |
 | GET | `/api/health` | 健康检查 |
+
+## 收件箱（Telegram / 链接自动入库）
+
+用户把链接发给 Telegram bot（或调 `/api/inbox`），后端批量触发三种生成，网站「视频导图 → 收件箱」Tab 查看。
+
+**Telegram 接入**：
+1. 在 Telegram 用 @BotFather 创建 bot，拿 token。
+2. 配置环境变量 `TELEGRAM_BOT_TOKEN`（本地 `server/.env` / Coze 控制台）。
+3. 后端提供 `/telegram/webhook` 接收消息（明文 JSON，无需加解密）。
+4. 部署后设 webhook：`POST /telegram/set-webhook {"url":"https://<公网>/telegram/webhook"}`。
+
+收到链接后**两步回复**：先回「收到 ✅ 正在生成…」，后台轮询 `GET /api/inbox/{key}` 至 `allDone` 后回「已入库 ✅」。纯云端，不依赖本地电脑常开。
 
 ## 目录
 

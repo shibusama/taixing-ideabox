@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ import db as dbmod
 import llm
 from db import SessionLocal, init_db
 from models import Cover, Idea, Mindmap, Note, Tag, Task
+from sqlalchemy import func
 
 BASE_DIR = pathlib.Path(__file__).parent
 
@@ -371,6 +373,20 @@ def _get_cached_mindmap(url_hash: str) -> dict | None:
     return _load_legacy_cache(url_hash)
 
 
+_material_locks: dict[str, threading.Lock] = {}
+
+
+def _material(key: str, url: str):
+    """Run _prepare_material once per url_hash, guarded by a per-key lock.
+
+    Prevents three concurrent tasks (mindmap/note/cover) for the same URL from
+    each downloading/transcribing the video independently.
+    """
+    lock = _material_locks.setdefault(key, threading.Lock())
+    with lock:
+        return _prepare_material(key, url)
+
+
 def _prepare_material(key: str, url: str):
     """Run prepare_video.py once -> (low_cost, transcript_preview). Reuses existing work dir."""
     work_dir = WORK_ROOT / key
@@ -425,7 +441,7 @@ def _run_task(task_id: str, url: str):
             mindmap_progress[task_id] = "已命中缓存，直接使用"
         else:
             mindmap_progress[task_id] = "下载并分析视频内容…"
-            low_cost, preview = _prepare_material(key, url)
+            low_cost, preview = _material(key, url)
 
             mindmap_progress[task_id] = "生成思维导图中…"
             mindmap_md = llm.generate_mindmap(low_cost, preview)
@@ -479,7 +495,7 @@ def _run_note_task(task_id: str, url: str, detail: bool = False):
         if cached and cached.get("detail") == detail:
             result = cached
         else:
-            low_cost, preview = _prepare_material(key, url)
+            low_cost, preview = _material(key, url)
             note_md = llm.generate_note(low_cost, detail=detail)
 
             result = {"id": key, "cached": False, "note_md": note_md, "detail": detail}
@@ -525,7 +541,7 @@ def create_mindmap(req: MindmapRequest):
     now = _now_ms()
     task_id = uuid.uuid4().hex[:12]
     with SessionLocal() as db:
-        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
+        db.add(Task(task_id=task_id, url=url, status="pending", kind="mindmap", key=key, created_at=now, updated_at=now))
         db.commit()
     _executor.submit(_run_task, task_id, url)
     return {"task_id": task_id}
@@ -552,7 +568,7 @@ def create_note(req: NoteRequest):
     now = _now_ms()
     task_id = uuid.uuid4().hex[:12]
     with SessionLocal() as db:
-        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
+        db.add(Task(task_id=task_id, url=url, status="pending", kind="note", key=key, created_at=now, updated_at=now))
         db.commit()
     _executor.submit(_run_note_task, task_id, url, req.detail)
     return {"task_id": task_id}
@@ -697,7 +713,7 @@ def _run_cover_task(task_id: str, url: str):
             cover_progress[task_id] = "已命中缓存，直接使用"
         else:
             cover_progress[task_id] = "下载并分析视频内容…"
-            low_cost, preview = _prepare_material(key, url)
+            low_cost, preview = _material(key, url)
 
             cover_progress[task_id] = "生成 AI 提示词…"
             prompt = llm.generate_image_prompt(low_cost, preview)
@@ -744,7 +760,7 @@ def create_cover(req: CoverRequest):
     now = _now_ms()
     task_id = uuid.uuid4().hex[:12]
     with SessionLocal() as db:
-        db.add(Task(task_id=task_id, url=url, status="pending", created_at=now, updated_at=now))
+        db.add(Task(task_id=task_id, url=url, status="pending", kind="cover", key=key, created_at=now, updated_at=now))
         db.commit()
     _executor.submit(_run_cover_task, task_id, url)
     return {"task_id": task_id}
@@ -762,6 +778,215 @@ def get_cover(task_id: str):
         "error": task.error,
         "progress": cover_progress.get(task_id, ""),
     }
+
+
+# ---------------------------------------------------------------------------
+# Inbox: 批量触发三种生成（WorkBuddy 微信入口用）
+# ---------------------------------------------------------------------------
+
+_KINDS = ("mindmap", "note", "cover")
+
+_CACHE_GETTERS = {
+    "mindmap": _get_cached_mindmap,
+    "note": lambda k: _get_cached_note(k),
+    "cover": _get_cached_cover,
+}
+
+_CACHE_TABLES = {
+    "mindmap": Mindmap,
+    "note": Note,
+    "cover": Cover,
+}
+
+_RUNNERS = {
+    "mindmap": lambda tid, url: _executor.submit(_run_task, tid, url),
+    "note": lambda tid, url: _executor.submit(_run_note_task, tid, url, False),
+    "cover": lambda tid, url: _executor.submit(_run_cover_task, tid, url),
+}
+
+
+class InboxRequest(BaseModel):
+    url: str
+
+
+def _trigger_inbox(url: str) -> dict:
+    """Batch-trigger mindmap/note/cover generation for a URL. Returns {key, allCached, tasks, cached}."""
+    url = url.strip()
+    key = cache_key(url)
+    tasks: dict[str, str | None] = {}
+    cached: dict[str, bool] = {}
+    all_cached = True
+    now = _now_ms()
+    for kind in _KINDS:
+        cache_hit = _CACHE_GETTERS[kind](key)
+        cached[kind] = bool(cache_hit)
+        if cache_hit:
+            tasks[kind] = None
+        else:
+            all_cached = False
+            task_id = uuid.uuid4().hex[:12]
+            tasks[kind] = task_id
+            with SessionLocal() as db:
+                db.add(Task(task_id=task_id, url=url, status="pending", kind=kind, key=key, created_at=now, updated_at=now))
+                db.commit()
+            _RUNNERS[kind](task_id, url)
+    return {"key": key, "url": url, "allCached": all_cached, "tasks": tasks, "cached": cached}
+
+
+@app.post("/api/inbox")
+def create_inbox(req: InboxRequest):
+    url = req.url.strip()
+    if not url.startswith(("http://", "https://")):
+        return {"error": "请提供有效的链接"}
+    return _trigger_inbox(url)
+
+
+@app.get("/api/inbox/{key}")
+def get_inbox(key: str):
+    kinds: dict[str, dict] = {}
+    all_done = True
+    url = ""
+    with SessionLocal() as db:
+        for kind in _KINDS:
+            task = (
+                db.query(Task)
+                .filter(Task.key == key, Task.kind == kind)
+                .order_by(Task.created_at.desc())
+                .first()
+            )
+            # 缓存表兜底：缓存已生成即视为完成（覆盖重启后任务被置 error 但缓存其实已有）
+            row = db.query(_CACHE_TABLES[kind]).filter(_CACHE_TABLES[kind].url_hash == key).first()
+            if row is None and task is None:
+                status, result, error = "pending", None, None
+                url = url or (task.url if task else "")
+            elif row is not None:
+                status, result, error = "done", {"cached": True}, None
+                url = url or (getattr(row, "url", "") or (task.url if task else ""))
+            else:
+                status, result, error = task.status, task.result, task.error
+                url = url or task.url
+            kinds[kind] = {"status": status, "result": result, "error": error}
+            if status != "done":
+                all_done = False
+    return {"key": key, "url": url, "allDone": all_done, "kinds": kinds}
+
+
+@app.get("/api/inbox-list")
+def list_inbox():
+    """聚合所有收进过的链接，按 key 去重，返回每个链接的三种内容状态与时间（按最新排序）。"""
+    rows = []
+    with SessionLocal() as db:
+        # 按 key 分组，从 tasks 聚合 url 与最新时间
+        grouped = (
+            db.query(Task.key, Task.url, func.max(Task.created_at).label("latest"))
+            .filter(Task.key.isnot(None))
+            .group_by(Task.key, Task.url)
+            .all()
+        )
+        for key, url, latest in grouped:
+            statuses = {}
+            for kind in _KINDS:
+                row = db.query(_CACHE_TABLES[kind]).filter(_CACHE_TABLES[kind].url_hash == key).first()
+                statuses[kind] = "done" if row is not None else "pending"
+            rows.append({
+                "key": key,
+                "url": url,
+                "statuses": statuses,
+                "latest": latest,
+            })
+    rows.sort(key=lambda r: (r["latest"] or 0), reverse=True)
+    return {"items": rows}
+
+
+# ---------------------------------------------------------------------------
+# Telegram bot 入口（收链接 → 自动入库）
+# ---------------------------------------------------------------------------
+
+def _telegram_token() -> str:
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
+
+
+def _telegram_send_message(chat_id, text: str):
+    """Send a text message via Telegram Bot API. Returns bool success."""
+    token = _telegram_token()
+    if not token:
+        return False
+    try:
+        resp = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text},
+            timeout=15,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+def _extract_url(text: str) -> str:
+    """Extract the first http(s) URL from text, trimming trailing CJK punctuation."""
+    m = re.search(r"https?://\S+", text)
+    if not m:
+        return ""
+    return m.group(0).rstrip("，。、；！？)】」》.,;!?)]}")
+
+
+def _monitor_and_notify(key: str, chat_id, url: str):
+    """Background: poll inbox status until all done, then send completion message."""
+    deadline = time.time() + 600
+    while time.time() < deadline:
+        try:
+            state = _get_inbox_state(key)
+            if state.get("allDone"):
+                _telegram_send_message(chat_id, "已入库 ✅ 思维导图/笔记/AI封面已生成，可到灵感匣网站查看。")
+                return
+        except Exception:
+            pass
+        time.sleep(5)
+
+
+def _get_inbox_state(key: str) -> dict:
+    """Read one inbox aggregate state (cache-backed)."""
+    return get_inbox(key)
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(payload: dict):
+    message = (payload or {}).get("message") or {}
+    chat = message.get("chat") or {}
+    chat_id = chat.get("id")
+    text = (message.get("text") or "").strip()
+
+    # 消息无聊天（如频道广播）→ 静默确认（Telegram 要求 200）
+    if chat_id is None:
+        return {"ok": True}
+
+    url = _extract_url(text)
+    if not url:
+        _telegram_send_message(chat_id, "请发送一个视频号 / 抖音 / 文章链接，例如：https://weixin.qq.com/sph/xxx")
+        return {"ok": True}
+
+    # 触发 inbox 不受 token 影响（token 只用于发回复消息）
+    result = _trigger_inbox(url)
+    _telegram_send_message(chat_id, "收到 ✅ 正在生成思维导图 / 笔记 / AI封面，完成后我会通知你。")
+    key = result.get("key")
+    if key:
+        _executor.submit(_monitor_and_notify, key, chat_id, url)
+    return {"ok": True}
+
+
+@app.post("/telegram/set-webhook")
+def telegram_set_webhook(url: str):
+    """Set the Telegram webhook to the given public URL (used after deploy)."""
+    token = _telegram_token()
+    if not token:
+        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN 未配置"}
+    resp = httpx.post(
+        f"https://api.telegram.org/bot{token}/setWebhook",
+        json={"url": url},
+        timeout=15,
+    )
+    data = resp.json() if resp.status_code == 200 else {}
+    return {"ok": data.get("ok", False), "result": data.get("description", "")}
 
 
 # ---------------------------------------------------------------------------
