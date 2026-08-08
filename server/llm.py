@@ -33,6 +33,19 @@ def _get_provider():
     return os.environ.get("LLM_PROVIDER", "coze").lower().strip()
 
 
+def _strip_code_fence(text: str) -> str:
+    """去掉 LLM 输出首尾可能包裹的 ```markdown / ``` 代码块标记，避免 markmap 解析失败。"""
+    stripped = (text or "").strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        lines = lines[1:] if lines[0].startswith("```") else lines
+        # 去掉结尾的 ```
+        while lines and lines[-1].strip() == "```":
+            lines.pop()
+        stripped = "\n".join(lines).strip()
+    return stripped
+
+
 # ---------- Coze 平台 Provider ----------
 
 def _chat_completion_coze(messages, temperature=0.4):
@@ -227,16 +240,17 @@ def generate_mindmap(low_cost_material, _preview=""):
 
     try:
         if provider == "coze":
-            return _chat_completion_coze([
+            result = _chat_completion_coze([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ])
         else:
             # siliconflow
-            return _chat_completion([
+            result = _chat_completion([
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ])
+        return _strip_code_fence(result)
     except Exception as e:
         return _template_mindmap(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
 

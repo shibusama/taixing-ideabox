@@ -411,6 +411,7 @@ def _prepare_material(key: str, url: str):
 def _run_task(task_id: str, url: str):
     """Background job: download/transcribe -> LLM -> persist result."""
     key = cache_key(url)
+    mindmap_progress[task_id] = "解析视频链接…"
     try:
         with SessionLocal() as db:
             task = db.get(Task, task_id)
@@ -421,8 +422,12 @@ def _run_task(task_id: str, url: str):
         cached = _get_cached_mindmap(key)
         if cached:
             result = cached
+            mindmap_progress[task_id] = "已命中缓存，直接使用"
         else:
+            mindmap_progress[task_id] = "下载并分析视频内容…"
             low_cost, preview = _prepare_material(key, url)
+
+            mindmap_progress[task_id] = "生成思维导图中…"
             mindmap_md = llm.generate_mindmap(low_cost, preview)
 
             result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
@@ -430,6 +435,7 @@ def _run_task(task_id: str, url: str):
                 db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
                 db.commit()
 
+        mindmap_progress[task_id] = "完成！"
         with SessionLocal() as db:
             task = db.get(Task, task_id)
             if task:
@@ -437,6 +443,7 @@ def _run_task(task_id: str, url: str):
                 task.result = result
                 db.commit()
     except Exception as exc:
+        mindmap_progress[task_id] = f"失败: {exc}"
         with SessionLocal() as db:
             task = db.get(Task, task_id)
             if task:
@@ -566,6 +573,8 @@ def get_note(task_id: str):
 
 # In-memory cover task progress (survives task lifetime, not persisted)
 cover_progress: dict[str, str] = {}
+# In-memory mindmap task progress
+mindmap_progress: dict[str, str] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -816,6 +825,7 @@ def get_mindmap(task_id: str):
         "status": task.status,
         "result": task.result,
         "error": task.error,
+        "progress": mindmap_progress.get(task_id, ""),
     }
 
 

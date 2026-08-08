@@ -11,6 +11,7 @@ export default function VideoMindmap() {
   const [error, setError] = useState(null)
   const [mindmapMd, setMindmapMd] = useState('')
   const [cached, setCached] = useState(false)
+  const [progress, setProgress] = useState('')
   const svgRef = useRef(null)
   const mmRef = useRef(null)
 
@@ -53,6 +54,7 @@ export default function VideoMindmap() {
     setLoading(true)
     setError(null)
     setMindmapMd('')
+    setProgress('')
 
     try {
       const resp = await fetch(`${API_BASE}/api/mindmap`, {
@@ -76,6 +78,7 @@ export default function VideoMindmap() {
         await new Promise(r => setTimeout(r, 3000))
         const poll = await fetch(`${API_BASE}/api/mindmap/${task_id}`)
         const state = await poll.json()
+        if (state.progress) setProgress(state.progress)
         if (state.status === 'done') {
           setMindmapMd(state.result.mindmap_md)
           setCached(state.result.cached)
@@ -122,7 +125,9 @@ export default function VideoMindmap() {
       {loading && (
         <div className="pop-panel bg-white p-8 text-center animate-pop-in">
           <div className="inline-block w-10 h-10 border-3 border-pop-black border-t-transparent animate-spin mb-3" />
-          <p className="font-display text-lg text-pop-black tracking-wide">正在解析视频…</p>
+          <p className="font-display text-lg text-pop-black tracking-wide">
+            {progress || '正在解析视频…'}
+          </p>
           <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">下载 · 提取音频 · 转写 · 生成导图</p>
         </div>
       )}
