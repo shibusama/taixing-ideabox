@@ -318,21 +318,23 @@ def generate_image_prompt(video_metadata, transcript_preview=""):
     """
     provider = _get_provider()
     if provider == "none":
-        return "科技感封面，蓝色调，简洁现代"
+        return "信息图知识卡，包含标题、要点、模块化布局，中文文案清晰可读"
 
     meta = video_metadata.get("metadata", {})
     title = meta.get("title") or meta.get("description") or "视频"
     desc = meta.get("description") or ""
 
-    system_prompt = """You are a professional AI image prompt engineer specializing in cinematic cover art. Generate a high-quality English prompt for the video cover image.
+    system_prompt = """You are a prompt engineer for generating content-rich infographic / knowledge-card images. The image MUST carry real readable text and structured information — NOT a decorative poster or movie cover.
 
 Requirements:
-1. Describe a specific scene with clear subject, lighting, composition, and atmosphere — be vivid and concrete
-2. Include cinematic quality keywords: "cinematic", "volumetric lighting", "sharp focus", "8K", "photorealistic"
-3. Specify the visual style (e.g. "Unreal Engine 5 aesthetic", "concept art", "cyberpunk", "minimalist", "oil painting")
-4. Include color palette direction (e.g. "deep blue and magenta neon", "warm golden hour", "dark moody tones")
-5. If appropriate, describe text overlay placement (e.g. "bold sans-serif title at the bottom")
-6. Keep it under 200 words, pure English, no explanations"""
+1. The image is a vertical infographic / knowledge card with real Chinese text content
+2. Extract the core message into a clear title + 3-6 key points / structured sections
+3. Use a modular card layout: title area, key-point blocks, maybe a simple diagram or icon
+4. All text must be short, accurate Chinese phrases (the model will render them into the image)
+5. Include a simple, clean visual style appropriate to the topic — modern, organized, readable
+6. Specify concrete layout and color direction (e.g. "clean light background, rounded info cards, soft colors")
+7. Under 200 words, English instructions only, no explanations. The rendered text should be Chinese."""
+
 
     user_prompt = f"""视频标题：{title}
 描述：{desc}
@@ -351,7 +353,7 @@ Requirements:
                 {"role": "user", "content": user_prompt},
             ])
     except Exception as e:
-        return "Cinematic video cover, photorealistic, volumetric lighting, deep blue and magenta neon tones, sharp focus, 8K resolution, Unreal Engine 5 aesthetic, dramatic composition, sleek and modern"
+        return "信息图知识卡，竖版，标题 + 3-6 个要点模块，中文文案清晰，简洁现代配色，浅色背景圆角卡片"
 
 
 # 启动时自动加载 .env
