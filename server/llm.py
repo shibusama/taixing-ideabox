@@ -324,12 +324,15 @@ def generate_image_prompt(video_metadata, transcript_preview=""):
     title = meta.get("title") or meta.get("description") or "视频"
     desc = meta.get("description") or ""
 
-    system_prompt = """你是一个 AI 绘图提示词专家。请根据视频信息生成一个高质量的文生图提示词（英文），用于生成视频封面图。
-要求：
-1. 提示词要简洁、具体、可执行
-2. 包含风格、主体、色调、构图
-3. 适合作为视频封面，突出视频主题
-4. 用英文，不超过 100 个词"""
+    system_prompt = """You are a professional AI image prompt engineer specializing in cinematic cover art. Generate a high-quality English prompt for the video cover image.
+
+Requirements:
+1. Describe a specific scene with clear subject, lighting, composition, and atmosphere — be vivid and concrete
+2. Include cinematic quality keywords: "cinematic", "volumetric lighting", "sharp focus", "8K", "photorealistic"
+3. Specify the visual style (e.g. "Unreal Engine 5 aesthetic", "concept art", "cyberpunk", "minimalist", "oil painting")
+4. Include color palette direction (e.g. "deep blue and magenta neon", "warm golden hour", "dark moody tones")
+5. If appropriate, describe text overlay placement (e.g. "bold sans-serif title at the bottom")
+6. Keep it under 200 words, pure English, no explanations"""
 
     user_prompt = f"""视频标题：{title}
 描述：{desc}
@@ -348,7 +351,7 @@ def generate_image_prompt(video_metadata, transcript_preview=""):
                 {"role": "user", "content": user_prompt},
             ])
     except Exception as e:
-        return "Modern technology封面, blue tones, clean and simple, professional, high quality, 4k"
+        return "Cinematic video cover, photorealistic, volumetric lighting, deep blue and magenta neon tones, sharp focus, 8K resolution, Unreal Engine 5 aesthetic, dramatic composition, sleek and modern"
 
 
 # 启动时自动加载 .env
