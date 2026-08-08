@@ -20,3 +20,13 @@ __pycache__/
 
 # Root-level temporary screenshots (NOT dist/assets, which must be committed)
 /assets/
+
+# 运行时日志与临时文件
+server/backend*.log
+server/work/
+*.db-shm
+*.db-wal
+
+# 本地启动脚本（个人用，不进库）
+start-server.bat
+stop-server.bat
