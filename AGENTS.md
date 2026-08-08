@@ -101,7 +101,7 @@ pnpm run build
   → 组装 low_cost_material.json → LLM 生成三种输出之一：
       ├─ generate_mindmap()      → markmap 思维导图
       ├─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
-      └─ generate_image_prompt() → 文生图提示词 → SiliconFlow 出图（AI 封面）
+      └─ generate_image_prompt() → 文生图提示词 → 火山方舟 seedream 出图（AI 封面）
 ```
 
 - **VLM**：`server/llm.py` 的 `describe_image()`，图片转 base64，调 `VLM_MODEL`（默认 `Qwen/Qwen3-VL-32B-Instruct`），上限 `VLM_MAX_FRAMES`（默认 8 帧）
@@ -118,7 +118,9 @@ pnpm run build
 | `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） |
 | `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） |
-| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image，AI 封面） |
+| `IMAGE_MODEL` | siliconflow 文生图模型（默认 Tongyi-MAI/Z-Image） |
+| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） |
+| `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） |
 
 ## 代码规范

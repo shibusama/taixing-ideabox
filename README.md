@@ -119,7 +119,7 @@ sh build-and-commit.sh
 - 视频工具（粘贴视频号/抖音链接 → 解析下载 → ASR 转写 + VLM 视觉理解）：
   - 视频导图：生成 markmap 思维导图
   - Markdown 笔记：生成结构化笔记（可切详细模式）
-  - AI 封面：生成波普漫画风封面图（文生图）
+  - AI 封面：生成有内容有文字的信息图/知识卡（文生图）
 - 响应式布局
 
 ## 数据存储
@@ -139,7 +139,7 @@ sh build-and-commit.sh
   → 组装 low_cost_material.json → LLM 生成三种输出之一：
       ├─ 思维导图（markmap 格式）
       ├─ Markdown 笔记（detail 可切详细模式）
-      └─ 文生图提示词 → SiliconFlow 出图（AI 封面）
+      └─ 文生图提示词 → 火山方舟 seedream 出图（AI 封面）
 ```
 
 ## 环境变量（server/.env）
@@ -153,7 +153,10 @@ sh build-and-commit.sh
 | `LLM_BASE_URL` | 硅基流动地址（默认已配） | — |
 | `LLM_MODEL` | 文本模型（默认 GLM-5.2） | — |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen3-VL-32B） | — |
-| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image） | AI 封面 |
+| `IMAGE_MODEL` | siliconflow 文生图模型（默认 Tongyi-MAI/Z-Image） | siliconflow 模式 |
+| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图方式） | AI 封面 |
+| `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
+| `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
 | `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
 
 ⚠️ `.env` 已 gitignore，**不要提交密钥**。Coze 部署在控制台配置环境变量。

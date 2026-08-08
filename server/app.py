@@ -598,8 +598,43 @@ def _get_cached_cover(url_hash: str) -> dict | None:
     return None
 
 
+def _text_to_image_volcark(prompt: str, api_key: str) -> str:
+    """Generate an image via Volcano Ark Agent Plan (OpenAI-compatible, /api/plan prefix)."""
+    import urllib.request
+
+    endpoint = os.environ.get(
+        "ARK_IMAGE_ENDPOINT",
+        "https://ark.cn-beijing.volces.com/api/plan/v3/images/generations",
+    )
+    model = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-5.0-lite")
+    size = os.environ.get("ARK_IMAGE_SIZE", "1920x1920")
+
+    payload = {"model": model, "prompt": prompt, "size": size}
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    images = data.get("images") or data.get("data") or []
+    url = images[0].get("url") or images[0].get("b64_json") if images else ""
+    if not url:
+        raise RuntimeError("Volcano Ark image generation returned no image url")
+    return url
+
+
 def _text_to_image(prompt: str) -> str:
-    """Generate an image from a prompt. Coze on the platform, SiliconFlow locally."""
+    """Generate an image from a prompt. Volcano Ark (Agent Plan) by default,
+    falls back to SiliconFlow or Coze."""
+    ark_key = os.environ.get("ARK_API_KEY", "")
+    if ark_key:
+        return _text_to_image_volcark(prompt, ark_key)
+
     provider = os.environ.get("LLM_PROVIDER", "coze").lower().strip()
     if provider == "siliconflow":
         import urllib.request

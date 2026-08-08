@@ -19,7 +19,7 @@ FastAPI (server/app.py)
 LLM 生成（三种出口，共用同一份材料）：
    ├─ generate_mindmap()      → markmap 思维导图
    ├─ generate_note()         → Markdown 笔记（detail 可切详细模式）
-   └─ generate_image_prompt() → 文生图提示词 → SiliconFlow 文生图 → AI 封面
+   └─ generate_image_prompt() → 文生图提示词 → 火山方舟 seedream 出图（AI 封面）
    ▼
 数据库持久化（mindmaps / notes / covers 表，按 URL sha256 缓存，重复解析秒回）
 ```
@@ -110,7 +110,7 @@ HY_TOKEN=your_cookie_string
 未配置时后端输出模板（元信息 + 转录采样），用于跑通全流程。
 要启用 AI 分析（导图/笔记/封面），配置 `LLM_PROVIDER` 选择模型提供商：
 
-**两种 Provider（`LLM_PROVIDER`，默认 `coze`）**
+**两种 Provider（`LLM_PROVIDER`，默认 `coze`）+ 独立生图**
 
 | Provider | 适用环境 | 模型 |
 |----------|---------|------|
@@ -118,19 +118,26 @@ HY_TOKEN=your_cookie_string
 | `siliconflow` | 本地开发（需 API key）| GLM-5.2 / Qwen3-VL-32B / Z-Image |
 | `none` | 无网络 | 模板回退 |
 
-本地开发用 `server/.env`（已 gitignore，注意**不要提交 key**）切到硅基流动：
+**AI 封面出图（`_text_to_image`）默认走火山方舟 Agent Plan**（配置了 `ARK_API_KEY` 时优先，走 `/api/plan/v3` 端点，用套餐额度不计费），否则回退 SiliconFlow / Coze。
+
+本地开发用 `server/.env`（已 gitignore，注意**不要提交 key**）：
 
 ```bash
-# 硅基流动（文本模型 + VLM 视觉模型 + 文生图共用 key）
+# 硅基流动（文本 + VLM 共用 key）
 LLM_PROVIDER=siliconflow
 LLM_API_KEY=sk-xxx
 LLM_MODEL=zai-org/GLM-5.2               # 文本生成（导图/笔记/封面提示词）
 VLM_MODEL=Qwen/Qwen3-VL-32B-Instruct     # 关键帧视觉理解
-IMAGE_MODEL=Tongyi-MAI/Z-Image           # 文生图（AI 封面）
+
+# 火山方舟 Agent Plan 生图（默认生图方式）
+ARK_API_KEY=ark-xxx
+ARK_IMAGE_MODEL=doubao-seedream-5.0-lite
+ARK_IMAGE_SIZE=1920x1920
+ARK_IMAGE_ENDPOINT=https://ark.cn-beijing.volces.com/api/plan/v3/images/generations
 ```
 
-> 代码默认值（`server/llm.py` / `server/app.py`）：`LLM_MODEL` = `zai-org/GLM-5.2`，`VLM_MODEL` = `Qwen/Qwen3-VL-32B-Instruct`，`IMAGE_MODEL` = `Tongyi-MAI/Z-Image`（siliconflow 分支）。Coze 分支默认豆包模型。早期默认的 `Qwen2.5-7B-Instruct` 输出大量乱码，已弃用。未配置 key 时全部回退模板。
-> 本地与 Coze 互不影响：`.env` 显式设 `siliconflow` 走硅基流动，Coze 无 `.env` 默认 `coze`。`_text_to_image`（AI 封面出图）同样按 provider 分叉。
+> 代码默认值（`server/llm.py` / `server/app.py`）：`LLM_MODEL` = `zai-org/GLM-5.2`，`VLM_MODEL` = `Qwen/Qwen3-VL-32B-Instruct`（siliconflow 分支）；生图默认走火山方舟 `doubao-seedream-5.0-lite`（配置 ARK_API_KEY 时）。早期默认的 `Qwen2.5-7B-Instruct` 输出大量乱码，已弃用。未配置 key 时全部回退模板。
+> 本地与 Coze 互不影响：`.env` 显式设 `siliconflow` 走硅基流动，Coze 无 `.env` 默认 `coze`。`_text_to_image`（AI 封面出图）优先火山方舟，其次按 provider 分叉。
 
 ## API
 

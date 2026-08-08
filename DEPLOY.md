@@ -39,7 +39,10 @@ git push
 | `LLM_BASE_URL` | 硅基流动地址（默认 https://api.siliconflow.cn/v1） | — |
 | `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） | — |
 | `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） | — |
-| `IMAGE_MODEL` | 文生图模型（默认 Tongyi-MAI/Z-Image） | AI 封面 |
+| `IMAGE_MODEL` | siliconflow 文生图模型（默认 Tongyi-MAI/Z-Image） | siliconflow 模式 |
+| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） | AI 封面 |
+| `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
+| `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
 | `VLM_MAX_FRAMES` | VLM 处理最大帧数（默认 8） | — |
 | `WORK_ROOT` | `/tmp/ideabox/work`（start.sh 已默认） | 默认即可 |
 | `DEPLOY_RUN_PORT` | Coze 自动注入 | 自动 |
