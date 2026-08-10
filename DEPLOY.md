@@ -43,7 +43,6 @@ git push
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） | AI 封面 |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
 | `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token（收链接 → 自动入库） | Telegram 收件 |
 | `VLM_MAX_FRAMES` | VLM 处理最大帧数（默认 8） | — |
 | `WORK_ROOT` | `/tmp/ideabox/work`（start.sh 已默认） | 默认即可 |
 | `DEPLOY_RUN_PORT` | Coze 自动注入 | 自动 |

@@ -14,7 +14,6 @@ import hashlib
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import threading
@@ -896,97 +895,6 @@ def list_inbox():
             })
     rows.sort(key=lambda r: (r["latest"] or 0), reverse=True)
     return {"items": rows}
-
-
-# ---------------------------------------------------------------------------
-# Telegram bot 入口（收链接 → 自动入库）
-# ---------------------------------------------------------------------------
-
-def _telegram_token() -> str:
-    return os.environ.get("TELEGRAM_BOT_TOKEN", "")
-
-
-def _telegram_send_message(chat_id, text: str):
-    """Send a text message via Telegram Bot API. Returns bool success."""
-    token = _telegram_token()
-    if not token:
-        return False
-    try:
-        resp = httpx.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text},
-            timeout=15,
-        )
-        return resp.status_code == 200
-    except Exception:
-        return False
-
-
-def _extract_url(text: str) -> str:
-    """Extract the first http(s) URL from text, trimming trailing CJK punctuation."""
-    m = re.search(r"https?://\S+", text)
-    if not m:
-        return ""
-    return m.group(0).rstrip("，。、；！？)】」》.,;!?)]}")
-
-
-def _monitor_and_notify(key: str, chat_id, url: str):
-    """Background: poll inbox status until all done, then send completion message."""
-    deadline = time.time() + 600
-    while time.time() < deadline:
-        try:
-            state = _get_inbox_state(key)
-            if state.get("allDone"):
-                _telegram_send_message(chat_id, "已入库 ✅ 思维导图/笔记/AI封面已生成，可到灵感匣网站查看。")
-                return
-        except Exception:
-            pass
-        time.sleep(5)
-
-
-def _get_inbox_state(key: str) -> dict:
-    """Read one inbox aggregate state (cache-backed)."""
-    return get_inbox(key)
-
-
-@app.post("/telegram/webhook")
-async def telegram_webhook(payload: dict):
-    message = (payload or {}).get("message") or {}
-    chat = message.get("chat") or {}
-    chat_id = chat.get("id")
-    text = (message.get("text") or "").strip()
-
-    # 消息无聊天（如频道广播）→ 静默确认（Telegram 要求 200）
-    if chat_id is None:
-        return {"ok": True}
-
-    url = _extract_url(text)
-    if not url:
-        _telegram_send_message(chat_id, "请发送一个视频号 / 抖音 / 文章链接，例如：https://weixin.qq.com/sph/xxx")
-        return {"ok": True}
-
-    # 触发 inbox 不受 token 影响（token 只用于发回复消息）
-    result = _trigger_inbox(url)
-    _telegram_send_message(chat_id, "收到 ✅ 正在生成思维导图 / 笔记 / AI封面，完成后我会通知你。")
-    key = result.get("key")
-    if key:
-        _executor.submit(_monitor_and_notify, key, chat_id, url)
-    return {"ok": True}
-
-
-@app.post("/telegram/set-webhook")
-def telegram_set_webhook(url: str):
-    """Set the Telegram webhook to the given public URL (used after deploy)."""
-    token = _telegram_token()
-    if not token:
-        return {"ok": False, "error": "TELEGRAM_BOT_TOKEN 未配置"}
-    resp = httpx.post(
-        f"https://api.telegram.org/bot{token}/setWebhook",
-        json={"url": url},
-        timeout=15,
-    )
-    data = resp.json() if resp.status_code == 200 else {}
-    return {"ok": data.get("ok", False), "result": data.get("description", "")}
 
 
 # ---------------------------------------------------------------------------

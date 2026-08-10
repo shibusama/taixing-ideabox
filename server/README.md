@@ -163,21 +163,15 @@ ARK_IMAGE_ENDPOINT=https://ark.cn-beijing.volces.com/api/plan/v3/images/generati
 | POST | `/api/inbox` | `{"url"}` → 批量触发三种生成（导图/笔记/封面），返回 `{key, allCached, tasks, cached}` |
 | GET | `/api/inbox/{key}` | 聚合三种生成状态：`{key, url, allDone, kinds}`（缓存兜底） |
 | GET | `/api/inbox-list` | 收件箱列表：按链接聚合的最近收进记录 + 三种状态 |
-| POST | `/telegram/webhook` | Telegram bot 接收消息：提链接 → 触发 inbox → 两步回复 |
-| POST | `/telegram/set-webhook` | 设置 Telegram webhook 到指定公网 URL（部署后调用） |
+| POST | `/api/sph/resolve` | `{"url"}` → 解析视频号分享链接，返回可播放/下载直链（需 `HY_TOKEN`） |
+| POST | `/api/admin/regenerate-mindmaps` | 后台重新生成全部缓存思维导图（真实转写），返回 `{ok, queued}` |
 | GET | `/api/health` | 健康检查 |
 
-## 收件箱（Telegram / 链接自动入库）
+## 收件箱（链接自动入库）
 
-用户把链接发给 Telegram bot（或调 `/api/inbox`），后端批量触发三种生成，网站「视频导图 → 收件箱」Tab 查看。
+调用 `POST /api/inbox` 传入链接，后端批量触发三种生成（思维导图 / 笔记 / AI 封面），网站「视频导图 → 收件箱」Tab 查看。
 
-**Telegram 接入**：
-1. 在 Telegram 用 @BotFather 创建 bot，拿 token。
-2. 配置环境变量 `TELEGRAM_BOT_TOKEN`（本地 `server/.env` / Coze 控制台）。
-3. 后端提供 `/telegram/webhook` 接收消息（明文 JSON，无需加解密）。
-4. 部署后设 webhook：`POST /telegram/set-webhook {"url":"https://<公网>/telegram/webhook"}`。
-
-收到链接后**两步回复**：先回「收到 ✅ 正在生成…」，后台轮询 `GET /api/inbox/{key}` 至 `allDone` 后回「已入库 ✅」。纯云端，不依赖本地电脑常开。
+纯云端，不依赖本地电脑常开：后台轮询 `GET /api/inbox/{key}` 聚合三种生成状态，直至 `allDone`。
 
 ## 目录
 
@@ -188,11 +182,13 @@ server/
 ├── models.py            # 6 张表模型（Idea/Tag/Mindmap/Note/Cover/Task，JSONB/JSON 按环境切换）
 ├── llm.py               # LLM 接口（文本/VLM/文生图提示词）
 ├── regenerate_mindmaps.py  # 思维导图重生成脚本（SKILL_SCRIPT_PATH 或仓库内副本）
-├── migrations/          # 生产库建表 SQL（create_notes.sql / create_covers.sql）
-├── requirements.txt
+├── migrations/          # 生产库建表 SQL（create_notes.sql / create_covers.sql / task_kind.sql）
+├── requirements.txt     # Python 依赖
+├── requirements-dev.txt # 开发依赖
 ├── ideabox.db           # SQLite 数据库（自动创建，已 gitignore）
 ├── .env                 # 环境变量（本地，已 gitignore，不提交）
 ├── start.sh             # 启动脚本（Coze 部署用）
+├── dev.sh               # 本地开发启动脚本（Coze dev 环境用）
 ├── README.md            # 本文档
 └── skills/
     └── prepare_video.py # 视频解析技能脚本

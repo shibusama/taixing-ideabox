@@ -18,10 +18,11 @@
 │   │   ├── IdeaCard.jsx    # 灵感卡片
 │   │   ├── IdeaList.jsx    # 列表视图
 │   │   ├── BoardView.jsx   # 看板视图（按标签分列）
-│   │   ├── VideoTools.jsx  # 视频工具 Tab 容器（导图/笔记/封面切换）
+│   │   ├── VideoTools.jsx  # 视频工具 Tab 容器（导图/笔记/封面/收件箱）
 │   │   ├── VideoMindmap.jsx# 视频思维导图
 │   │   ├── VideoNote.jsx   # 链接转 Markdown 笔记
 │   │   ├── VideoCover.jsx  # 链接转 AI 封面图
+│   │   ├── Inbox.jsx       # 收件箱（链接自动入库列表）
 │   │   ├── Sidebar.jsx     # 侧边栏
 │   │   ├── SearchBar.jsx   # 搜索栏
 │   │   └── EmptyState.jsx  # 空状态
@@ -39,12 +40,30 @@
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（文本/VLM/文生图提示词）
 │   ├── requirements.txt    # Python 依赖
-│   ├── start.sh            # 启动脚本
+│   ├── requirements-dev.txt# 开发依赖
+│   ├── start.sh            # 启动脚本（Coze 部署用）
+│   ├── dev.sh              # 本地开发启动脚本
+│   ├── README.md           # 后端说明文档
 │   ├── migrations/         # 生产库建表 SQL
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   └── skills/             # 视频解析技能脚本
-├── .coze                   # 部署配置
+├── public/                 # 静态资源（favicon 等）
+├── dist/                   # 前端构建产物（由后端托管）
+├── index.html              # Vite 入口
+├── vite.config.js          # Vite 配置（/api 代理）
+├── tailwind.config.js      # Tailwind 配置
+├── postcss.config.js       # PostCSS 配置
+├── pnpm-workspace.yaml     # pnpm workspace 配置
+├── pnpm-lock.yaml          # pnpm 锁文件
+├── start-dev.sh            # 本地一键启动（前后端同源）
 ├── build-and-commit.sh     # 构建 + 提交脚本
+├── AGENTS.md               # 开发代理指令
+├── DEPLOY.md               # 部署说明（Coze）
+├── .gitignore             # Git 忽略规则
+├── .coze                   # 部署配置
+├── .cozeproj/              # Coze 项目文档（plan.md）
+├── .claude/                # 编辑器工具配置
+├── .codegraph/             # 代码图谱索引
 └── package.json            # 前端依赖
 ```
 
@@ -120,7 +139,6 @@ sh build-and-commit.sh
   - 视频导图：生成 markmap 思维导图
   - Markdown 笔记：生成结构化笔记（可切详细模式）
   - AI 封面：生成有内容有文字的信息图/知识卡（文生图）
-  - 收件箱：把链接发给 Telegram bot，自动生成三种内容，网站集中查看
 - 响应式布局
 
 ## 数据存储
@@ -158,7 +176,6 @@ sh build-and-commit.sh
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图方式） | AI 封面 |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
 | `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token（收链接 → 自动入库） | Telegram 收件 |
 | `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
 
 ⚠️ `.env` 已 gitignore，**不要提交密钥**。Coze 部署在控制台配置环境变量。
