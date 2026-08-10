@@ -380,9 +380,10 @@ def generate_note(low_cost_material, detail=False):
         return _template_note(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
 
 
-def generate_image_prompt(video_metadata, transcript_preview=""):
+def generate_image_prompt(video_metadata):
     """
-    根据视频元数据生成文生图提示词（用于 AI 封面图）
+    根据视频素材生成文生图提示词（用于 AI 封面图）
+    从 low_cost_material.json 结构化字段读取标题/描述/逐字稿/画面文字，不截断。
     """
     provider = _get_provider()
     if provider == "none":
@@ -391,6 +392,13 @@ def generate_image_prompt(video_metadata, transcript_preview=""):
     meta = video_metadata.get("metadata", {})
     title = meta.get("title") or meta.get("description") or "视频"
     desc = meta.get("description") or ""
+    segments = video_metadata.get("selected_segments") or []
+    ocr = video_metadata.get("ocr_text") or ""
+    transcript = "\n".join(
+        f"[{s.get('start', 0)}-{s.get('end', 0)}] {s.get('text', '')}"
+        for s in segments
+        if s.get("text")
+    )
 
     system_prompt = """You are a prompt engineer for generating content-rich infographic / knowledge-card images. The image MUST carry real readable text and structured information — NOT a decorative poster or movie cover.
 
@@ -406,7 +414,10 @@ Requirements:
 
     user_prompt = f"""视频标题：{title}
 描述：{desc}
-{"转写预览：" + transcript_preview[:200] if transcript_preview else ""}
+逐字稿：
+{transcript}
+画面文字：
+{ocr}
 请生成封面图提示词。"""
 
     try:

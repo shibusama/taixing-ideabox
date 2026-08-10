@@ -404,20 +404,59 @@ def extract_media(work_dir, mp4_path, fps_interval):
     return audio, contact_sheet, media_info
 
 
-def transcribe(work_dir, audio, model_name="", skip=False):
-    """Transcribe audio using Coze ASR service (cloud API, no local model needed).
-    Uploads audio to object storage and calls ASR API.
-    """
-    if skip:
-        return {"available": False, "skipped": True}
+def _read_groq_key():
+    """从环境变量或 ~/.agent-reach/config.yaml 读取 Groq API key。"""
+    key = os.environ.get("GROQ_API_KEY", "").strip()
+    if key:
+        return key
+    import re as _re
+    for cfg in (
+        pathlib.Path.home() / ".agent-reach" / "config.yaml",
+        pathlib.Path.home() / ".agent-reach" / "config.yml",
+    ):
+        if cfg.exists():
+            try:
+                m = _re.search(r'groq_api_key\s*[:=]\s*["\']?([A-Za-z0-9_\-]+)', cfg.read_text(encoding="utf-8", errors="replace"))
+                if m:
+                    return m.group(1)
+            except Exception:
+                continue
+    return ""
 
+
+def _write_transcript(work_dir, text, started, model, segments=None):
+    """统一写 transcript.json / transcript.txt 并返回结果字典。"""
+    text = (text or "").strip()
+    if segments is None:
+        rows = [{"start": 0, "end": 0, "text": text}] if text else []
+    else:
+        rows = [
+            {"start": round(s.get("start", 0), 2), "end": round(s.get("end", 0), 2), "text": (s.get("text") or "").strip()}
+            for s in segments
+            if (s.get("text") or "").strip()
+        ]
+    full_text = text if text else "\n".join(r["text"] for r in rows)
+    transcript_json = {
+        "language": "zh",
+        "duration": round(time.time() - started, 1),
+        "segments": rows,
+        "elapsed_seconds": round(time.time() - started, 1),
+        "model": model,
+    }
+    (work_dir / "transcript.json").write_text(json.dumps(transcript_json, ensure_ascii=False, indent=2), encoding="utf-8")
+    (work_dir / "transcript.txt").write_text(full_text, encoding="utf-8")
+    return {
+        "available": bool(full_text),
+        "segments": len(rows),
+        "elapsed_seconds": transcript_json["elapsed_seconds"],
+        "model": model,
+    }
+
+
+def _transcribe_coze(work_dir, audio_path):
+    """Coze 云 ASR（生产默认）。"""
     started = time.time()
-    audio_path = pathlib.Path(audio)
-    if not audio_path.exists():
-        return {"available": False, "error": f"Audio file not found: {audio}"}
-
     try:
-        # Convert WAV to MP3 (ASR supports MP3 better)
         mp3_path = audio_path.with_suffix(".mp3")
         ffmpeg = _find_ffmpeg()
         if ffmpeg:
@@ -429,7 +468,6 @@ def transcribe(work_dir, audio, model_name="", skip=False):
         else:
             audio_for_upload = audio_path
 
-        # Upload to object storage
         from coze_coding_dev_sdk import S3SyncStorage, ASRClient
 
         s3 = S3SyncStorage()
@@ -438,40 +476,95 @@ def transcribe(work_dir, audio, model_name="", skip=False):
         object_key = s3.upload_file(audio_bytes, content_type="audio/mpeg")
         audio_url = s3.generate_presigned_url(object_key, expires=3600)
 
-        # Call ASR
-        asr = ASRClient(
-            base_url=os.environ.get("COZE_ASR_BASE_URL", ""),
-            api_key="",
-        )
+        asr = ASRClient(base_url=os.environ.get("COZE_ASR_BASE_URL", ""), api_key="")
         result = asr.recognize(url=audio_url, format="mp3")
-
-        # Parse result - ASR returns text directly
         transcript_text = result if isinstance(result, str) else (result.get("text", "") if isinstance(result, dict) else str(result))
-        rows = [{"start": 0, "end": 0, "text": transcript_text.strip()}]
-
-        transcript_json = {
-            "language": "zh",
-            "duration": round(time.time() - started, 1),
-            "segments": rows,
-            "elapsed_seconds": round(time.time() - started, 1),
-            "model": "coze-asr",
-        }
-        (work_dir / "transcript.json").write_text(
-            json.dumps(transcript_json, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        (work_dir / "transcript.txt").write_text(
-            transcript_text.strip(), encoding="utf-8"
-        )
-        return {
-            "available": True,
-            "segments": len(rows),
-            "elapsed_seconds": transcript_json["elapsed_seconds"],
-            "model": "coze-asr",
-        }
+        return _write_transcript(work_dir, transcript_text, started, "coze-asr")
     except Exception as exc:
-        print(f"[asr] ASR transcription failed: {exc}", file=sys.stderr)
+        print(f"[asr] Coze ASR failed: {exc}", file=sys.stderr)
         return {"available": False, "error": str(exc)}
 
+
+def _transcribe_groq(work_dir, audio_path):
+    """Groq Whisper API（whisper-large-v3-turbo，带时间戳）。"""
+    started = time.time()
+    try:
+        import httpx
+
+        api_key = _read_groq_key()
+        if not api_key:
+            raise RuntimeError("GROQ_API_KEY 未配置（~/.agent-reach/config.yaml 里也没有）")
+
+        mp3_path = audio_path.with_suffix(".mp3")
+        ffmpeg = _find_ffmpeg()
+        if ffmpeg:
+            subprocess.run(
+                [ffmpeg, "-y", "-i", str(audio_path), "-acodec", "mp3", "-b:a", "64k", str(mp3_path)],
+                capture_output=True, timeout=120,
+            )
+            audio_for_upload = mp3_path if mp3_path.exists() else audio_path
+        else:
+            audio_for_upload = audio_path
+
+        with open(audio_for_upload, "rb") as f:
+            resp = httpx.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={"file": (audio_for_upload.name, f, "audio/mpeg")},
+                data={
+                    "model": "whisper-large-v3-turbo",
+                    "response_format": "verbose_json",
+                    "language": "zh",
+                },
+                timeout=180,
+            )
+        resp.raise_for_status()
+        payload = resp.json()
+        return _write_transcript(work_dir, payload.get("text", ""), started, "groq-whisper-large-v3-turbo", segments=payload.get("segments") or [])
+    except Exception as exc:
+        print(f"[asr] Groq ASR failed: {exc}", file=sys.stderr)
+        return {"available": False, "error": str(exc)}
+
+
+def _transcribe_local(work_dir, audio_path):
+    """本地 faster-whisper（离线兜底，模型默认 Systran/faster-whisper-small）。"""
+    started = time.time()
+    try:
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")  # 模型已本地缓存，禁止联网
+        from faster_whisper import WhisperModel
+
+        model_name = os.environ.get("WHISPER_MODEL", "Systran/faster-whisper-small")
+        model = WhisperModel(model_name, device="cpu", compute_type="int8", local_files_only=True)
+        segments_iter, info = model.transcribe(str(audio_path), language="zh")
+        segments = [{"start": s.start, "end": s.end, "text": s.text.strip()} for s in segments_iter]
+        text = "\n".join(s["text"] for s in segments)
+        return _write_transcript(work_dir, text, started, model_name.split("/")[-1], segments=segments)
+    except Exception as exc:
+        print(f"[asr] local faster-whisper failed: {exc}", file=sys.stderr)
+        return {"available": False, "error": str(exc)}
+
+
+def transcribe(work_dir, audio, model_name="", skip=False):
+    """语音转文字。ASR_PROVIDER: coze(默认,生产) / groq(云端Whisper) / local(faster-whisper)。
+    groq 失败时自动回退本地 faster-whisper（本地兜底）。"""
+    if skip:
+        return {"available": False, "skipped": True}
+
+    audio_path = pathlib.Path(audio)
+    if not audio_path.exists():
+        return {"available": False, "error": f"Audio file not found: {audio}"}
+
+    provider = os.environ.get("ASR_PROVIDER", "coze").lower().strip()
+
+    if provider == "groq":
+        result = _transcribe_groq(work_dir, audio_path)
+        if not result.get("available"):
+            print("[asr] groq 失败，回退本地 faster-whisper", file=sys.stderr)
+            return _transcribe_local(work_dir, audio_path)
+        return result
+    if provider == "local":
+        return _transcribe_local(work_dir, audio_path)
+    return _transcribe_coze(work_dir, audio_path)
 
 def ocr_frames_tesseract(work_dir):
     """Fallback: extract text from keyframes via pytesseract (Tesseract OCR).

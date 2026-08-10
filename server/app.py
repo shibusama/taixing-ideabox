@@ -715,7 +715,7 @@ def _run_cover_task(task_id: str, url: str):
             low_cost, preview = _material(key, url)
 
             cover_progress[task_id] = "生成 AI 提示词…"
-            prompt = llm.generate_image_prompt(low_cost, preview)
+            prompt = llm.generate_image_prompt(low_cost)
 
             cover_progress[task_id] = "绘制封面图中…"
             image_url = _text_to_image(prompt)

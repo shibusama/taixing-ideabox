@@ -64,6 +64,11 @@ PGDATABASE_URL=postgresql://user:pass@host:5432/db
 
 # 视频号解析凭据（/api/sph/resolve 必需，元宝 cookie）
 HY_TOKEN=your_cookie_string
+
+# 语音转文字：coze(默认) / groq(云端 Whisper) / local(faster-whisper 本地兜底)
+ASR_PROVIDER=groq
+GROQ_API_KEY=gsk_xxx
+# WHISPER_MODEL=Systran/faster-whisper-small
 ```
 
 ## 视频号解析（/api/sph/resolve）
@@ -83,7 +88,7 @@ HY_TOKEN=your_cookie_string
 1. 环境变量 `SKILL_SCRIPT_PATH`（可指向任意路径）
 2. 默认回退到仓库内副本 `server/skills/prepare_video.py`（已随仓库提交，开箱即用）
 
-系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写使用 **Coze 平台云 ASR**（`coze_coding_dev_sdk.ASRClient`，仅 Coze 环境可用），无需本地下载模型。
+系统依赖：`ffmpeg` / `ffprobe`（需在 PATH）。转写由 `ASR_PROVIDER` 决定：`coze`（默认，仅 Coze 环境可用）/ `groq`（Groq Whisper API，需 `GROQ_API_KEY`）/ `local`（faster-whisper 本地模型，离线可用；groq 失败自动回退本地）。
 
 ## 视频信息提取（ASR + VLM）
 
@@ -91,7 +96,7 @@ HY_TOKEN=your_cookie_string
 
 | 路径 | 用途 | 说明 |
 |---|---|---|
-| **ASR 语音转写** | 提取视频里"说的话" | Coze 云 ASR，上传音频到对象存储调用 |
+| **ASR 语音转写** | 提取视频里"说的话" | `ASR_PROVIDER=coze`（默认）/ `groq` / `local`，带时间戳 |
 | **VLM 视觉理解** | 提取图片/画面内容（转写为空时触发） | Qwen-VL 理解关键帧语义 + 提取文字 |
 
 **VLM（视觉语言模型）**：当 ASR 转写为空（如图片 + 背景音乐视频），`prepare_video.py` 用 Qwen-VL（`server/llm.py` 的 `describe_image()`）逐帧理解图片内容。关键帧用 ffmpeg **场景检测**抽取（只保留画面变化的帧，上限 `VLM_MAX_FRAMES` 默认 8）。
