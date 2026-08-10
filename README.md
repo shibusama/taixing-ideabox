@@ -39,6 +39,7 @@
 │   ├── db.py               # 数据库配置
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（文本/VLM/文生图提示词）
+│   ├── cover_render.py     # AI 封面 SVG 渲染（COVER_METHOD=svg 时文字叠字）
 │   ├── requirements.txt    # Python 依赖
 │   ├── requirements-dev.txt# 开发依赖
 │   ├── start.sh            # 启动脚本（Coze 部署用）

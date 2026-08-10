@@ -43,6 +43,10 @@ git push
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） | AI 封面 |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
 | `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
+| `COVER_METHOD` | AI 封面方式：`ai`（默认，AI 画带文字整图）/ `svg`（AI 画无文字背景 + SVG 叠字，文字 100% 准确） | — |
+| `ASR_PROVIDER` | 语音转文字：`coze`（默认，部署）/ `groq`（云端 Whisper）/ `local`（faster-whisper 本地兜底） | 本地开发/离线 |
+| `GROQ_API_KEY` | Groq key（groq 模式；不配则读 `~/.agent-reach/config.yaml`） | groq 模式 |
+| `WHISPER_MODEL` | faster-whisper 模型（默认 `Systran/faster-whisper-small`） | local 模式 |
 | `VLM_MAX_FRAMES` | VLM 处理最大帧数（默认 8） | — |
 | `WORK_ROOT` | `/tmp/ideabox/work`（start.sh 已默认） | 默认即可 |
 | `DEPLOY_RUN_PORT` | Coze 自动注入 | 自动 |

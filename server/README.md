@@ -189,6 +189,7 @@ server/
 ├── db.py                # SQLAlchemy engine / session / init（读取 server/.env）
 ├── models.py            # 6 张表模型（Idea/Tag/Mindmap/Note/Cover/Task，JSONB/JSON 按环境切换）
 ├── llm.py               # LLM 接口（文本/VLM/文生图提示词）
+├── cover_render.py      # AI 封面 SVG 渲染（COVER_METHOD=svg 时文字叠字，文字 100% 准确）
 ├── regenerate_mindmaps.py  # 思维导图重生成脚本（SKILL_SCRIPT_PATH 或仓库内副本）
 ├── migrations/          # 生产库建表 SQL（create_notes.sql / create_covers.sql / task_kind.sql）
 ├── requirements.txt     # Python 依赖

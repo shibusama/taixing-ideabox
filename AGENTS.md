@@ -37,9 +37,12 @@ pnpm run build
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（可选）
+│   ├── cover_render.py     # AI 封面 SVG 渲染（COVER_METHOD=svg）
 │   ├── requirements.txt    # Python 依赖
+│   ├── requirements-dev.txt# 开发依赖
 │   ├── ideabox.db          # SQLite 数据库（自动创建，已 gitignore）
 │   ├── start.sh            # 启动脚本（部署用）
+│   ├── dev.sh              # 本地开发启动脚本
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   └── skills/             # 视频解析技能脚本
 │       └── prepare_video.py
