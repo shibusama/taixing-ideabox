@@ -525,10 +525,10 @@ def ocr_frames_tesseract(work_dir):
 
 
 def ocr_frames(work_dir):
-    """Extract image content from keyframes, VLM first (Qwen-VL via SiliconFlow), tesseract fallback.
+    """Extract image content from keyframes, VLM first (Coze/SiliconFlow), tesseract fallback.
 
     VLM understands image semantics (charts, products, scenes) beyond raw text, which
-    matters for image/music videos. Falls back to tesseract OCR when LLM is not configured.
+    matters for image/music videos. Falls back to tesseract OCR when LLM_PROVIDER=none.
     """
     frames_dir = work_dir / "frames"
     if not frames_dir.is_dir():
@@ -543,8 +543,8 @@ def ocr_frames(work_dir):
 
     import llm as llm_mod
 
-    api_key = os.environ.get("LLM_API_KEY", "")
-    if not api_key:
+    provider = os.environ.get("LLM_PROVIDER", "coze")
+    if provider == "none":
         return ocr_frames_tesseract(work_dir)
 
     descriptions = []
