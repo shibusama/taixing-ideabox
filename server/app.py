@@ -26,6 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db as dbmod
+import cover_render
 import llm
 from db import SessionLocal, init_db
 from models import Cover, Idea, Mindmap, Note, Tag, Task
@@ -714,11 +715,29 @@ def _run_cover_task(task_id: str, url: str):
             cover_progress[task_id] = "下载并分析视频内容…"
             low_cost, preview = _material(key, url)
 
-            cover_progress[task_id] = "生成 AI 提示词…"
-            prompt = llm.generate_image_prompt(low_cost)
+            cover_method = os.environ.get("COVER_METHOD", "ai").lower().strip()
+            if cover_method == "svg":
+                # 路径二：AI 画无文字背景 + SVG 叠字（文字 100% 准确）
+                cover_progress[task_id] = "提炼卡片内容…"
+                card = llm.generate_cover_content(low_cost, preview)
 
-            cover_progress[task_id] = "绘制封面图中…"
-            image_url = _text_to_image(prompt)
+                cover_progress[task_id] = "生成无文字背景图…"
+                bg_prompt = llm.generate_bg_prompt(low_cost, card)
+                bg_url = _text_to_image(bg_prompt)
+
+                cover_progress[task_id] = "渲染知识卡片…"
+                covers_dir = WORK_ROOT / "covers"
+                covers_dir.mkdir(parents=True, exist_ok=True)
+                cover_render.render_card(bg_url, card, covers_dir / f"{key}.png")
+                image_url = f"/covers/{key}.png"
+                prompt = bg_prompt
+            else:
+                # 路径一（默认）：AI 一次生成带文字整图
+                cover_progress[task_id] = "生成 AI 提示词…"
+                prompt = llm.generate_image_prompt(low_cost)
+
+                cover_progress[task_id] = "绘制封面图中…"
+                image_url = _text_to_image(prompt)
 
             result = {"id": key, "cached": False, "image_url": image_url, "prompt": prompt}
             with SessionLocal() as db:
@@ -1114,6 +1133,18 @@ def sph_resolve(req: SphResolveRequest):
             "coverUrl": feed_info.get("coverUrl") or "",
         },
     }
+
+
+@app.get("/covers/{name}")
+def get_cover_file(name: str):
+    """COVER_METHOD=svg 生成的封面 PNG（WORK_ROOT/covers 下）。"""
+    from fastapi.responses import FileResponse
+
+    safe = os.path.basename(name)
+    p = WORK_ROOT / "covers" / safe
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="cover not found")
+    return FileResponse(str(p), media_type="image/png")
 
 
 # ---------------------------------------------------------------------------

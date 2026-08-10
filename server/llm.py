@@ -435,5 +435,111 @@ Requirements:
         return "信息图知识卡，竖版，标题 + 3-6 个要点模块，中文文案清晰，简洁现代配色，浅色背景圆角卡片"
 
 
+def _parse_card_json(text: str) -> dict | None:
+    """从 LLM 输出解析 {title, points, summary}。"""
+    text = _strip_code_fence(text or "")
+    try:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(text[start : end + 1])
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        pass
+    return None
+
+
+def generate_cover_content(low_cost_material, transcript_preview=""):
+    """从素材提炼知识卡片内容：{title, points(4-5), summary}。COVER_METHOD=svg 用。"""
+    provider = _get_provider()
+    meta = low_cost_material.get("metadata", {})
+    title = meta.get("title") or meta.get("description") or "视频知识卡片"
+    desc = meta.get("description") or ""
+    segments = low_cost_material.get("selected_segments") or []
+    transcript = "\n".join(
+        f"[{s.get('start', 0)}-{s.get('end', 0)}] {s.get('text', '')}"
+        for s in segments
+        if s.get("text")
+    )
+    ocr = low_cost_material.get("ocr_text") or ""
+
+    def _template():
+        pts = []
+        for s in segments[:5]:
+            t = (s.get("text") or "").strip()
+            if t:
+                pts.append(t[:22])
+        if not pts:
+            pts = ["从视频中提炼的核心要点", "结构化呈现关键信息", "适合快速阅读的知识卡片"]
+        return {"title": title, "points": pts[:5], "summary": (desc or "AI 生成的知识卡片")[:30]}
+
+    if provider == "none":
+        return _template()
+
+    system_prompt = """你是知识卡片文案专家。根据视频素材提炼竖版知识卡片内容，只输出 JSON（不要 markdown 代码块）：
+{"title": "不超过12个字的标题", "points": ["4到5个要点，每个不超过16字"], "summary": "一句话总结，不超过24字"}
+要点要具体、有信息量，基于逐字稿/画面文字提炼。"""
+    user_prompt = f"""视频标题：{title}
+描述：{desc}
+{'逐字稿：' + transcript if transcript else ''}
+{'画面文字：' + ocr if ocr else ''}
+请提炼知识卡片内容。"""
+
+    try:
+        if provider == "coze":
+            result = _chat_completion_coze([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+        else:
+            result = _chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+        data = _parse_card_json(result)
+        if data and data.get("points"):
+            return {
+                "title": str(data.get("title") or title)[:24],
+                "points": [str(p)[:40] for p in data.get("points", []) if str(p).strip()][:5],
+                "summary": str(data.get("summary") or "")[:48],
+            }
+    except Exception as e:
+        print(f"[cover] generate_cover_content failed: {e}", file=sys.stderr)
+    return _template()
+
+
+def generate_bg_prompt(low_cost_material, card=None):
+    """生成无文字背景图提示词（竖版，供 COVER_METHOD=svg 叠字用）。"""
+    provider = _get_provider()
+    meta = low_cost_material.get("metadata", {})
+    title = meta.get("title") or meta.get("description") or "知识卡片"
+
+    fallback = "现代简约渐变背景，柔和低饱和配色，竖版 9:16，无任何文字、无字母、无数字、无水印，纯背景图，中央留白适合叠加文字卡片"
+    if provider == "none":
+        return fallback
+
+    system_prompt = """You generate a VERTICAL background image prompt for an infographic knowledge card.
+The background must be a clean, modern, abstract scene WITHOUT ANY TEXT/letters/numbers/watermarks (real text will be overlaid later).
+Specify: abstract gradient/soft shapes, low-saturation harmonious colors, vertical 9:16, generous blank center area for text overlay.
+English, under 120 words, no explanations. End with: 无任何文字、无字母、无数字、无水印，纯背景图。"""
+    user_prompt = f"主题：{title}\n请生成竖版无文字背景图提示词。"
+
+    try:
+        if provider == "coze":
+            return _chat_completion_coze([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+        else:
+            return _chat_completion([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ])
+    except Exception as e:
+        print(f"[cover] generate_bg_prompt failed: {e}", file=sys.stderr)
+        return fallback
+
+
 # 启动时自动加载 .env
 _load_dotenv()

@@ -176,6 +176,7 @@ sh build-and-commit.sh
 | `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图方式） | AI 封面 |
 | `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） | AI 封面 |
 | `ARK_IMAGE_SIZE` | 火山生图尺寸（默认 1920x1920） | — |
+| `COVER_METHOD` | AI 封面方式：`ai`（默认，AI 画带文字整图）/ `svg`（AI 画无文字背景 + SVG 叠字，文字 100% 准确） | — |
 | `VLM_MAX_FRAMES` | VLM 处理的最大帧数（默认 8） | — |
 | `ASR_PROVIDER` | 语音转文字：`coze`（默认，部署）/ `groq`（云端 Whisper）/ `local`（faster-whisper 本地兜底） | 本地开发/离线 |
 | `GROQ_API_KEY` | Groq key（groq 模式；不配则读 `~/.agent-reach/config.yaml`） | groq 模式 |

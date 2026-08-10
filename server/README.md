@@ -69,6 +69,9 @@ HY_TOKEN=your_cookie_string
 ASR_PROVIDER=groq
 GROQ_API_KEY=gsk_xxx
 # WHISPER_MODEL=Systran/faster-whisper-small
+
+# AI 封面方式：ai(默认，AI 画带文字整图) / svg(AI 画无文字背景 + SVG 叠字，文字 100% 准确)
+COVER_METHOD=svg
 ```
 
 ## 视频号解析（/api/sph/resolve）
