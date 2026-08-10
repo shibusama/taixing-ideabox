@@ -539,7 +539,15 @@ def ocr_frames(work_dir):
     if not frame_paths:
         return {"available": False, "error": "no frames extracted"}
     max_frames = int(os.environ.get("VLM_MAX_FRAMES", "8"))
-    selected = frame_paths[:max_frames]
+    total = len(frame_paths)
+    if total <= max_frames:
+        selected = frame_paths
+    elif max_frames <= 1:
+        selected = frame_paths[:1]
+    else:
+        # 均匀选帧（含首尾）：避免只取开头 N 帧而漏掉视频中后段的关键画面
+        idxs = sorted({round(i * (total - 1) / (max_frames - 1)) for i in range(max_frames)})
+        selected = [frame_paths[i] for i in idxs]
 
     import llm as llm_mod
 
@@ -547,29 +555,50 @@ def ocr_frames(work_dir):
     if provider == "none":
         return ocr_frames_tesseract(work_dir)
 
-    descriptions = []
-    for img in selected:
-        try:
-            desc = llm_mod.describe_image(
-                str(img),
-                prompt=(
-                    "这是一段视频的关键帧。请用中文描述图片内容："
-                    "1) 图片上所有可见的文字（原样提取，包括标题、标语、字幕、数字）；"
-                    "2) 图片展示的主体内容（产品/图表/场景/人物动作等）。"
-                    "简洁分点输出。"
-                ),
+    single_prompt = (
+        "这是一段视频的关键帧。请用中文描述图片内容："
+        "1) 图片上所有可见的文字（原样提取，包括标题、标语、字幕、数字）；"
+        "2) 图片展示的主体内容（产品/图表/场景/人物动作等）。"
+        "简洁分点输出。"
+    )
+
+    # 优先一次请求带全部帧（省往返/成本），失败则逐帧兜底
+    try:
+        if len(selected) == 1:
+            desc = llm_mod.describe_image(str(selected[0]), prompt=single_prompt)
+            ocr_text = f"[{selected[0].name}] {desc}"
+            frames_read = 1
+        else:
+            batch_prompt = (
+                f"这是一段视频按时间顺序抽出的 {len(selected)} 张关键帧。"
+                "请逐张用中文描述，每张单独一段、以'图N:'开头："
+                "1) 该帧所有可见的文字（原样提取，包括标题、标语、字幕、数字）；"
+                "2) 该帧展示的主体内容（产品/图表/场景/人物动作等）。"
+                "简洁分点输出。"
             )
-            descriptions.append(f"[{img.name}] {desc}")
-        except Exception as exc:
-            print(f"[vlm] {img.name} failed: {exc}", file=sys.stderr)
-            continue
+            ocr_text = llm_mod.describe_images([str(p) for p in selected], prompt=batch_prompt)
+            frames_read = len(selected)
+    except Exception as exc:
+        print(f"[vlm] batch describe failed ({exc}), fallback to per-frame", file=sys.stderr)
+        ocr_text = None
 
-    if not descriptions:
-        return ocr_frames_tesseract(work_dir)
+    if ocr_text is None:
+        # 逐帧兜底（兼容单图/旧端点）
+        descriptions = []
+        for img in selected:
+            try:
+                desc = llm_mod.describe_image(str(img), prompt=single_prompt)
+                descriptions.append(f"[{img.name}] {desc}")
+            except Exception as exc:
+                print(f"[vlm] {img.name} failed: {exc}", file=sys.stderr)
+                continue
+        if not descriptions:
+            return ocr_frames_tesseract(work_dir)
+        ocr_text = "\n\n".join(descriptions)
+        frames_read = len(descriptions)
 
-    ocr_text = "\n\n".join(descriptions)
     (work_dir / "ocr_result.txt").write_text(ocr_text, encoding="utf-8")
-    return {"available": True, "text": ocr_text, "frames_read": len(descriptions), "engine": "vlm"}
+    return {"available": True, "text": ocr_text, "frames_read": frames_read, "engine": "vlm"}
 
 
 def build_low_cost_material(work_dir, material, max_chars):

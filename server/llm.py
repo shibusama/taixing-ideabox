@@ -166,6 +166,74 @@ def describe_image(image_path, prompt="请描述这张图片的内容，包括�
     return data["choices"][0]["message"]["content"]
 
 
+def _describe_images_coze(image_paths, prompt):
+    """一次请求带多张图片，用 Coze SDK 调豆包 VLM 逐张分析。"""
+    from coze_coding_dev_sdk import LLMClient
+    from coze_coding_utils.runtime_ctx.context import new_context
+    from langchain_core.messages import HumanMessage
+
+    ctx = new_context(method="invoke")
+    client = LLMClient(ctx=ctx)
+    model = os.environ.get("VLM_MODEL", "doubao-seed-2-0-pro-260215")
+
+    content = [{"type": "text", "text": prompt}]
+    for image_path in image_paths:
+        b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        })
+    messages = [HumanMessage(content=content)]
+    resp = client.invoke(messages=messages, model=model, temperature=0.2)
+    return resp.content
+
+
+def describe_images(image_paths, prompt="请逐张描述这些图片的内容。"):
+    """一次请求带多张图片让 VLM 逐张分析（省往返/成本），返回合并后的文本。
+
+    image_paths: 按时间顺序排列的图片路径列表。
+    """
+    provider = _get_provider()
+    if provider == "coze":
+        return _describe_images_coze(image_paths, prompt)
+
+    # 硅基流动 VLM（OpenAI 兼容：一条消息多个 image_url）
+    api_key = os.environ.get("LLM_API_KEY", "")
+    if not api_key:
+        raise ValueError("LLM_API_KEY not set for VLM image analysis")
+
+    base_url = os.environ.get("LLM_BASE_URL", "https://api.siliconflow.cn/v1/chat/completions").rstrip("/")
+    if not base_url.endswith("/chat/completions"):
+        base_url += "/chat/completions"
+    model = os.environ.get("VLM_MODEL", "Qwen/Qwen3-VL-32B-Instruct")
+
+    content = [{"type": "text", "text": prompt}]
+    for image_path in image_paths:
+        b64 = base64.b64encode(pathlib.Path(image_path).read_bytes()).decode("utf-8")
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+        })
+
+    payload = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": content}],
+        "temperature": 0.2,
+    }).encode()
+
+    req = urllib.request.Request(
+        base_url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+    )
+    resp = urllib.request.urlopen(req, timeout=120)
+    data = json.loads(resp.read().decode())
+    return data["choices"][0]["message"]["content"]
+
+
 # ---------- 模板回退（无网络） ----------
 
 def _template_mindmap(low_cost_material):
