@@ -58,7 +58,7 @@ export default function IdeaList({ ideas, onEdit, onDelete, onTogglePin, searchQ
                 className="flex items-center gap-3 cursor-pointer select-none group"
                 onClick={() => toggleDate(dateLabel)}
               >
-                <div className="bg-pop-black/10 border-2 border-pop-black/30 px-2.5 py-0.5 group-hover:bg-pop-black/20 group-hover:border-pop-black/60 transition-colors">
+                <div className="bg-cream border-2 border-pop-black/30 px-2.5 py-0.5 group-hover:bg-pop-black/5 group-hover:border-pop-black/60 transition-colors">
                   <span className="font-display text-pop-black/60 text-base tracking-wide uppercase">{dateLabel}</span>
                 </div>
                 <div className="flex-1 h-px" style={{ backgroundImage: 'repeating-linear-gradient(90deg, #0a0a0a 0, #0a0a0a 4px, transparent 4px, transparent 8px)' }} />
