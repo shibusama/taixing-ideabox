@@ -696,8 +696,36 @@ def _text_to_image(prompt: str) -> str:
     return resp.image_urls[0]
 
 
+def _call_video2image_workflow(url: str) -> str:
+    """调用 video2image.coze.site 工作流生成知识卡片封面图。"""
+    base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://video2image.coze.site")
+    token = os.environ.get("VIDEO2IMAGE_TOKEN", "")
+    if not token:
+        raise RuntimeError("VIDEO2IMAGE_TOKEN 未配置")
+    with httpx.Client(timeout=180.0) as client:
+        resp = client.post(
+            f"{base_url}/run",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "video_url": {"url": url, "file_type": "video"},
+                "style": "pop",
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("error"):
+            raise RuntimeError(f"工作流解析失败: {data['error']}")
+        card_url = data.get("card_image_url")
+        if not card_url:
+            raise RuntimeError("工作流未返回 card_image_url")
+        return card_url
+
+
 def _run_cover_task(task_id: str, url: str):
-    """Background job: analyze content -> generate prompt -> text-to-image -> persist."""
+    """Background job: call video2image workflow -> persist result."""
     key = cache_key(url)
     cover_progress[task_id] = "解析视频链接…"
     try:
@@ -712,32 +740,9 @@ def _run_cover_task(task_id: str, url: str):
             result = cached
             cover_progress[task_id] = "已命中缓存，直接使用"
         else:
-            cover_progress[task_id] = "下载并分析视频内容…"
-            low_cost, preview = _material(key, url)
-
-            cover_method = os.environ.get("COVER_METHOD", "ai").lower().strip()
-            if cover_method == "svg":
-                # 路径二：AI 画无文字背景 + SVG 叠字（文字 100% 准确）
-                cover_progress[task_id] = "提炼卡片内容…"
-                card = llm.generate_cover_content(low_cost, preview)
-
-                cover_progress[task_id] = "生成无文字背景图…"
-                bg_prompt = llm.generate_bg_prompt(low_cost, card)
-                bg_url = _text_to_image(bg_prompt)
-
-                cover_progress[task_id] = "渲染知识卡片…"
-                covers_dir = WORK_ROOT / "covers"
-                covers_dir.mkdir(parents=True, exist_ok=True)
-                cover_render.render_card(bg_url, card, covers_dir / f"{key}.png")
-                image_url = f"/covers/{key}.png"
-                prompt = bg_prompt
-            else:
-                # 路径一（默认）：AI 一次生成带文字整图
-                cover_progress[task_id] = "生成 AI 提示词…"
-                prompt = llm.generate_image_prompt(low_cost)
-
-                cover_progress[task_id] = "绘制封面图中…"
-                image_url = _text_to_image(prompt)
+            cover_progress[task_id] = "正在通过工作流解析视频并生成封面…"
+            image_url = _call_video2image_workflow(url)
+            prompt = ""
 
             result = {"id": key, "cached": False, "image_url": image_url, "prompt": prompt}
             with SessionLocal() as db:
