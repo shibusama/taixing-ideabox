@@ -26,7 +26,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 import db as dbmod
-import cover_render
 import llm
 from db import SessionLocal, init_db
 from models import Cover, Idea, Mindmap, Note, Tag, Task
@@ -614,88 +613,6 @@ def _get_cached_cover(url_hash: str) -> dict | None:
     return None
 
 
-def _text_to_image_volcark(prompt: str, api_key: str) -> str:
-    """Generate an image via Volcano Ark Agent Plan (OpenAI-compatible, /api/plan prefix)."""
-    import urllib.request
-
-    endpoint = os.environ.get(
-        "ARK_IMAGE_ENDPOINT",
-        "https://ark.cn-beijing.volces.com/api/plan/v3/images/generations",
-    )
-    model = os.environ.get("ARK_IMAGE_MODEL", "doubao-seedream-5.0-lite")
-    size = os.environ.get("ARK_IMAGE_SIZE", "1920x1920")
-
-    payload = {"model": model, "prompt": prompt, "size": size}
-    req = urllib.request.Request(
-        endpoint,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=180) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    images = data.get("images") or data.get("data") or []
-    url = images[0].get("url") or images[0].get("b64_json") if images else ""
-    if not url:
-        raise RuntimeError("Volcano Ark image generation returned no image url")
-    return url
-
-
-def _text_to_image(prompt: str) -> str:
-    """Generate an image from a prompt. Volcano Ark (Agent Plan) by default,
-    falls back to SiliconFlow or Coze."""
-    ark_key = os.environ.get("ARK_API_KEY", "")
-    if ark_key:
-        return _text_to_image_volcark(prompt, ark_key)
-
-    provider = os.environ.get("LLM_PROVIDER", "coze").lower().strip()
-    if provider == "siliconflow":
-        import urllib.request
-
-        base_url = os.environ.get("LLM_BASE_URL", "").rstrip("/")
-        if not base_url:
-            base_url = "https://api.siliconflow.cn/v1"
-        api_key = os.environ.get("LLM_API_KEY", "")
-        model = os.environ.get("IMAGE_MODEL", "Tongyi-MAI/Z-Image")
-        image_size = os.environ.get("IMAGE_SIZE", "1024x1024")
-
-        payload = {"model": model, "prompt": prompt, "image_size": image_size}
-        req = urllib.request.Request(
-            f"{base_url}/images/generations",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        images = data.get("images") or []
-        url = images[0].get("url") if images else ""
-        if not url:
-            raise RuntimeError("text-to-image API returned no image url")
-        return url
-
-    # coze（默认）：Coze 平台 ImageGenerationClient
-    from coze_coding_dev_sdk import ImageGenerationClient
-    from coze_coding_utils.runtime_ctx.context import new_context
-
-    ctx = new_context(method="generate")
-    client = ImageGenerationClient(ctx=ctx)
-
-    model = os.environ.get("IMAGE_MODEL", "doubao-seedream-4-5-251128")
-    size = os.environ.get("IMAGE_SIZE", "1024x1024")
-
-    resp = client.generate(prompt=prompt, model=model, size=size)
-    if not resp.success:
-        raise RuntimeError(f"Coze image generation failed: {resp.error_messages}")
-    return resp.image_urls[0]
-
-
 def _call_video2image_workflow(url: str) -> str:
     """调用 video2image.coze.site 工作流生成知识卡片封面图。"""
     base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://video2image.coze.site")
@@ -1138,18 +1055,6 @@ def sph_resolve(req: SphResolveRequest):
             "coverUrl": feed_info.get("coverUrl") or "",
         },
     }
-
-
-@app.get("/covers/{name}")
-def get_cover_file(name: str):
-    """COVER_METHOD=svg 生成的封面 PNG（WORK_ROOT/covers 下）。"""
-    from fastapi.responses import FileResponse
-
-    safe = os.path.basename(name)
-    p = WORK_ROOT / "covers" / safe
-    if not p.exists():
-        raise HTTPException(status_code=404, detail="cover not found")
-    return FileResponse(str(p), media_type="image/png")
 
 
 # ---------------------------------------------------------------------------

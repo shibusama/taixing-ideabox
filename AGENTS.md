@@ -37,7 +37,6 @@ pnpm run build
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（Coze 平台默认，siliconflow 备选）
-│   ├── cover_render.py     # AI 封面 SVG 渲染（COVER_METHOD=svg）
 │   ├── requirements.txt    # Python 依赖（14 个包）
 │   ├── ideabox.db          # SQLite 数据库（自动创建，已 gitignore）
 │   ├── start.sh            # 启动脚本（部署用）
@@ -119,12 +118,11 @@ pnpm run build
 | GET | `/api/health` | 健康检查 |
 | POST | `/api/admin/regenerate-mindmaps` | 管理：重生成所有缓存导图 |
 | POST | `/api/sph/resolve` | 视频号链接解析（需 HY_TOKEN） |
-| GET | `/covers/{name}` | COVER_METHOD=svg 时获取封面图片文件 |
 
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法
 2. 卡片按日期分组展示，支持置顶
-3. 标签系统（10 种颜色自动分配）
+3. 标签系统（8 种颜色自动分配）
 4. 全文搜索（`/` 快捷键聚焦）
 5. 编辑/删除/置顶
 6. 数据导入/导出（JSON）
@@ -132,7 +130,7 @@ pnpm run build
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
 9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 三种输出
 
-## AI 封面生成流程（已替换为工作流）
+### AI 封面生成流程
 
 ```
 用户发视频链接
@@ -143,11 +141,7 @@ pnpm run build
   → 存入 Cover 缓存表，前端轮询 GET /api/cover/{task_id} 拿 image_url 显示
 ```
 
-**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词、豆包画图 —— 全部由工作流一站式完成。
-
-### COVER_METHOD 环境变量
-- `ai`（默认）— 调用 video2image 工作流
-- `svg` — 旧版：AI 画无文字背景 + SVG 叠字（文字 100% 准确，需本地渲染）
+**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词、文生图 API —— 全部由工作流一站式完成。
 
 ## 思维导图/笔记流程（保持原有）
 
@@ -159,10 +153,9 @@ pnpm run build
   → 信息提取：
       ├─ ASR 语音转写（Coze 云）→ transcript.txt
       └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL/豆包逐帧理解 → ocr_result.txt
-  → 组装 low_cost_material.json → LLM 生成三种输出之一：
+  → 组装 low_cost_material.json → LLM 生成两种输出之一：
       ├─ generate_mindmap()      → markmap 思维导图
-      ├─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
-      └─ generate_image_prompt() → 文生图提示词 → 火山方舟 seedream 出图（AI 封面，旧版）
+      └─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
 ```
 
 - **VLM**：`server/llm.py` 的 `describe_image()`，`LLM_PROVIDER=coze` 时用豆包模型，`siliconflow` 时用 Qwen-VL
@@ -180,11 +173,7 @@ pnpm run build
 | `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） | — |
 | `LLM_MODEL` | 文本模型（Coze 模式默认豆包，siliconflow 模式默认 GLM-5.2） | `doubao-seed-2-0-pro-260215` |
 | `VLM_MODEL` | 视觉理解模型（siliconflow 模式） | `Qwen/Qwen3-VL-8B-Instruct` |
-| `IMAGE_MODEL` | siliconflow 文生图模型 | `Tongyi-MAI/Z-Image` |
-| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） | — |
-| `ARK_IMAGE_MODEL` | 火山生图模型 | `doubao-seedream-4-5-251128` |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） | `8` |
-| `COVER_METHOD` | 封面生成方式：`ai`（工作流）/ `svg`（本地渲染） | `ai` |
 | `VIDEO2IMAGE_BASE_URL` | 视频封面工作流地址 | `https://video2image.coze.site` |
 | `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
 
@@ -217,16 +206,14 @@ pnpm run build
 - `WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
 - `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
 
-### 6. AI 封面已替换为 video2image 工作流
-- 原来：`_material()` → `llm.generate_image_prompt()` → `_text_to_image()`（生产环境网络受限容易失败）
-- 现在：`POST https://video2image.coze.site/run`（工作流一站式处理）
+### 6. AI 封面使用 video2image 工作流
+- 封面生成走 `POST https://video2image.coze.site/run`（工作流一站式处理）
 - 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
 
 ### 7. LLM 模型已从硅基流动迁移到 Coze 平台
-- `LLM_PROVIDER=coze`（默认）使用 Coze SDK 的 `LLMClient` 和 `ImageGenerationClient`
+- `LLM_PROVIDER=coze`（默认）使用 Coze SDK 的 `LLMClient`
 - `LLM_PROVIDER=siliconflow` 仍可切换回硅基流动
 - 文本模型：`doubao-seed-2-0-pro-260215`
-- 生图模型：`doubao-seedream-4-5-251128`（通过火山方舟 Agent Plan）
 
 ### 8. faster-whisper 已移除
 - 生产环境不再需要 faster-whisper（461MB），ASR 使用 Coze 云端服务
