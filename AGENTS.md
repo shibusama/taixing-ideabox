@@ -33,7 +33,10 @@ pnpm run build
 ├── public/
 │   └── favicon.svg         # 图标
 ├── server/                 # Python 后端
-│   ├── app.py              # FastAPI 入口（含 API 路由）
+│   ├── app.py              # FastAPI 入口（注册路由 + 静态文件）
+│   ├── config.py           # 环境变量 + 全局对象
+│   ├── helpers.py          # 工具函数（时间/ID/缓存/数据迁移）
+│   ├── cover.py            # 封面生成工作流（video2image）
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（Coze 平台默认，siliconflow 备选）
@@ -42,6 +45,10 @@ pnpm run build
 │   ├── start.sh            # 启动脚本（部署用）
 │   ├── dev.sh              # 本地开发启动脚本
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
+│   ├── routers/            # 路由模块
+│   │   ├── ideas.py        # 灵感 CRUD / 标签 / 导出导入
+│   │   ├── video.py        # 导图/笔记/封面/收件箱
+│   │   └── admin.py        # 健康检查 / 管理 / sph
 │   └── skills/             # 视频解析技能脚本
 │       └── prepare_video.py
 └── src/
@@ -67,6 +74,7 @@ pnpm run build
         ├── VideoCover.jsx      # 视频封面图（轮询 /api/cover/{task_id}）
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
+        ├── Inbox.jsx           # 收件箱（三种任务进度展示）
         └── EmptyState.jsx      # 空状态
 ```
 
@@ -76,7 +84,7 @@ pnpm run build
 - 部署流程：
   1. `build` → `pip install -r server/requirements.txt`（安装 Python 依赖）
   2. `run` → `sh server/start.sh` → `cd server && WORK_ROOT=/tmp/ideabox/work uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
-- 服务端 `server/app.py` 使用 FastAPI + PostgreSQL（部署）/ SQLite（开发），统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
+- 服务端 `server/app.py` 注册三个路由模块（`routers/ideas.py`、`routers/video.py`、`routers/admin.py`），统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
 ## API 路由一览
 
