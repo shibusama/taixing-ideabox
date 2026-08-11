@@ -36,10 +36,9 @@ pnpm run build
 │   ├── app.py              # FastAPI 入口（含 API 路由）
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
-│   ├── llm.py              # LLM 接口（可选）
+│   ├── llm.py              # LLM 接口（Coze 平台默认，siliconflow 备选）
 │   ├── cover_render.py     # AI 封面 SVG 渲染（COVER_METHOD=svg）
-│   ├── requirements.txt    # Python 依赖
-│   ├── requirements-dev.txt# 开发依赖
+│   ├── requirements.txt    # Python 依赖（14 个包）
 │   ├── ideabox.db          # SQLite 数据库（自动创建，已 gitignore）
 │   ├── start.sh            # 启动脚本（部署用）
 │   ├── dev.sh              # 本地开发启动脚本
@@ -66,7 +65,7 @@ pnpm run build
         ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/笔记/封面切换）
         ├── VideoMindmap.jsx    # 视频导图
         ├── VideoNote.jsx       # 链接转 Markdown 笔记
-        ├── VideoCover.jsx      # 链接转 AI 封面图
+        ├── VideoCover.jsx      # 视频封面图（轮询 /api/cover/{task_id}）
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
         └── EmptyState.jsx      # 空状态
@@ -80,6 +79,48 @@ pnpm run build
   2. `run` → `sh server/start.sh` → `cd server && WORK_ROOT=/tmp/ideabox/work uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
 - 服务端 `server/app.py` 使用 FastAPI + PostgreSQL（部署）/ SQLite（开发），统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
+## API 路由一览
+
+### 灵感 CRUD
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/ideas` | 获取所有灵感 |
+| GET | `/api/ideas/archived` | 获取已归档灵感 |
+| POST | `/api/ideas` | 创建灵感 |
+| PUT | `/api/ideas/{idea_id}` | 更新灵感 |
+| DELETE | `/api/ideas/{idea_id}` | 删除灵感（软删） |
+| POST | `/api/ideas/{idea_id}/restore` | 恢复已删除 |
+| POST | `/api/ideas/{idea_id}/pin` | 置顶/取消置顶 |
+| DELETE | `/api/archived` | 清空归档 |
+| GET | `/api/tags` | 获取标签列表 |
+| GET | `/api/export` | 导出 JSON |
+| POST | `/api/import` | 导入 JSON |
+
+### 视频工具
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/mindmap` | 创建思维导图任务 |
+| GET | `/api/mindmap/{task_id}` | 查询导图任务状态 |
+| POST | `/api/note` | 创建 Markdown 笔记任务 |
+| GET | `/api/note/{task_id}` | 查询笔记任务状态 |
+| POST | `/api/cover` | 创建 AI 封面任务（调用 video2image 工作流） |
+| GET | `/api/cover/{task_id}` | 查询封面任务状态 |
+
+### 收件箱
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/inbox` | 存入收件箱（同时触发导图/笔记/封面三个任务） |
+| GET | `/api/inbox/{key}` | 查询收件箱任务状态 |
+| GET | `/api/inbox-list` | 收件箱列表 |
+
+### 其他
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/health` | 健康检查 |
+| POST | `/api/admin/regenerate-mindmaps` | 管理：重生成所有缓存导图 |
+| POST | `/api/sph/resolve` | 视频号链接解析（需 HY_TOKEN） |
+| GET | `/covers/{name}` | COVER_METHOD=svg 时获取封面图片文件 |
+
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法
 2. 卡片按日期分组展示，支持置顶
@@ -89,9 +130,26 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 三种输出（markmap 思维导图 / Markdown 笔记 / AI 封面图）
+9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 三种输出
 
-## 视频工具链路
+## AI 封面生成流程（已替换为工作流）
+
+```
+用户发视频链接
+  → POST /api/cover {url}
+  → 后台 _run_cover_task() 调用 _call_video2image_workflow()
+  → POST https://video2image.coze.site/run（Bearer Token 认证）
+  → 工作流返回 card_image_url + card_content（标题/要点/摘要/标签）
+  → 存入 Cover 缓存表，前端轮询 GET /api/cover/{task_id} 拿 image_url 显示
+```
+
+**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词、豆包画图 —— 全部由工作流一站式完成。
+
+### COVER_METHOD 环境变量
+- `ai`（默认）— 调用 video2image 工作流
+- `svg` — 旧版：AI 画无文字背景 + SVG 叠字（文字 100% 准确，需本地渲染）
+
+## 思维导图/笔记流程（保持原有）
 
 ```
 视频号/抖音链接
@@ -99,32 +157,36 @@ pnpm run build
   → 下载 input.mp4
   → ffmpeg 拆解：提取 audio.wav + 场景检测抽关键帧（720px，scene 阈值 0.3）
   → 信息提取：
-      ├─ ASR 语音转写（Coze 云，说的话）→ transcript.txt
-      └─ VLM 视觉理解（转写为空时触发）→ Qwen3-VL 逐帧理解 → ocr_result.txt
+      ├─ ASR 语音转写（Coze 云）→ transcript.txt
+      └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL/豆包逐帧理解 → ocr_result.txt
   → 组装 low_cost_material.json → LLM 生成三种输出之一：
       ├─ generate_mindmap()      → markmap 思维导图
       ├─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
-      └─ generate_image_prompt() → 文生图提示词 → 火山方舟 seedream 出图（AI 封面）
+      └─ generate_image_prompt() → 文生图提示词 → 火山方舟 seedream 出图（AI 封面，旧版）
 ```
 
-- **VLM**：`server/llm.py` 的 `describe_image()`，图片转 base64，调 `VLM_MODEL`（默认 `Qwen/Qwen3-VL-32B-Instruct`），上限 `VLM_MAX_FRAMES`（默认 8 帧）
-- **降级**：VLM 未配 key → 回退 tesseract OCR（`ocr_frames_tesseract`）→ 都不可用则跳过
+- **VLM**：`server/llm.py` 的 `describe_image()`，`LLM_PROVIDER=coze` 时用豆包模型，`siliconflow` 时用 Qwen-VL
+- **降级**：VLM 不可用 → 回退 tesseract OCR（仅开发环境）→ 都不可用则跳过
 - **场景检测**：`extract_media` 用 `select='gt(scene,0.3)'` + `-vsync vfr` 只抽画面变化的帧
+- **ASR**：使用 Coze 平台云 ASR 服务（`coze_coding_dev_sdk.ASRClient`），上传音频到对象存储 → 调用云端语音识别
 
 ## 环境变量（server/.env，已 gitignore）
 
-| 变量 | 用途 |
-|---|---|
-| `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） |
-| `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） |
-| `LLM_PROVIDER` | 模型提供商：`coze`（默认，部署）/ `siliconflow`（本地）/ `none`（模板） |
-| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） |
-| `LLM_MODEL` | 文本模型（默认 zai-org/GLM-5.2） |
-| `VLM_MODEL` | 视觉理解模型（默认 Qwen/Qwen3-VL-32B-Instruct） |
-| `IMAGE_MODEL` | siliconflow 文生图模型（默认 Tongyi-MAI/Z-Image） |
-| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） |
-| `ARK_IMAGE_MODEL` | 火山生图模型（默认 doubao-seedream-5.0-lite） |
-| `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） |
+| 变量 | 用途 | 默认值 |
+|------|------|--------|
+| `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） | — |
+| `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） | — |
+| `LLM_PROVIDER` | 模型提供商：`coze`（默认，部署）/ `siliconflow`（本地）/ `none`（模板） | `coze` |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） | — |
+| `LLM_MODEL` | 文本模型（Coze 模式默认豆包，siliconflow 模式默认 GLM-5.2） | `doubao-seed-2-0-pro-260215` |
+| `VLM_MODEL` | 视觉理解模型（siliconflow 模式） | `Qwen/Qwen3-VL-8B-Instruct` |
+| `IMAGE_MODEL` | siliconflow 文生图模型 | `Tongyi-MAI/Z-Image` |
+| `ARK_API_KEY` | 火山方舟 Agent Plan key（默认生图，走 /api/plan 不计费） | — |
+| `ARK_IMAGE_MODEL` | 火山生图模型 | `doubao-seedream-4-5-251128` |
+| `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） | `8` |
+| `COVER_METHOD` | 封面生成方式：`ai`（工作流）/ `svg`（本地渲染） | `ai` |
+| `VIDEO2IMAGE_BASE_URL` | 视频封面工作流地址 | `https://video2image.coze.site` |
+| `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
 
 ## 代码规范
 - 组件使用函数式组件 + Hooks
@@ -135,21 +197,16 @@ pnpm run build
 ## 常见问题与修复记录
 
 ### 1. 部署环境没有 Node.js，前端必须在本地构建
-- **问题**：部署环境（Coze Vefaas）只有 Python 3.12，没有 Node.js/pnpm
-- **修复**：`dist/` 必须在本地构建并提交到 Git，部署时 `.coze` 的 build 只装 Python 依赖
-- **工作流**：改代码 → `pnpm run build` → 提交 Git（含 `dist/`）→ 部署
+- `dist/` 必须在本地构建并提交到 Git，部署时 `.coze` 的 build 只装 Python 依赖
 - 不要把 `dist/` 加到 `.gitignore`
 
 ### 2. 生产环境使用 PostgreSQL，开发环境用 SQLite
 - `server/db.py` 检测 `PGDATABASE_URL` 环境变量：有则连 PostgreSQL，没有则回退 SQLite
-- 生产环境日志中 `PGDATABASE_URL=SET` 表示正使用 PostgreSQL
-- 表结构由 SQLAlchemy ORM 自动创建（SQLite 下 `init_db()` 触发建表）
-- ⚠️ `COZE_SUPABASE_URL` 是 Supabase API 的 HTTPS 地址，**不是**数据库连接串，SQLAlchemy 无法识别。必须用 `PGDATABASE_URL`
+- 表结构由 SQLAlchemy ORM 自动创建
 
 ### 3. 健康检查端点不是 `/v1/ping`
 - 项目提供 `/api/health` 作为健康检查接口
-- 部署平台可能发 `GET /v1/ping` 探活，返回 404 是正常的，不影响功能
-- 如需消除 404 日志，可加一个 `/v1/ping` 路由：`@app.get("/v1/ping")`
+- 部署平台可能发 `GET /v1/ping` 探活，返回 404 是正常的
 
 ### 4. 前端 API 地址解析
 - `src/config.js` 按优先级：`window.APP_CONFIG.apiBase` > `VITE_API_BASE` 环境变量 > 默认值
@@ -157,44 +214,24 @@ pnpm run build
 - 生产环境默认：`/api`（同源，由 Python 服务统一提供）
 
 ### 5. 部署环境 server/ 目录只读，WORK_ROOT 不能放 server/ 下
-- **问题**：`app.py` 中 `WORK_ROOT = BASE_DIR / "work"`，部署时 `server/` 目录是只读文件系统，`mkdir` 报错 `OSError: [Errno 30] Read-only file system`
-- **修复**：`WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
-- **`server/start.sh`** 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
-- 本地开发时 `WORK_ROOT` 默认为 `server/work/`（无环境变量时）
+- `WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
+- `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
 
-### 6. 数据库连接变量用错：COZE_SUPABASE_URL ≠ PGDATABASE_URL
-- **问题**：`db.py` 之前读取 `COZE_SUPABASE_URL`，但该变量值是 Supabase API 的 HTTPS 地址（如 `https://br-cosy-cow-...`），SQLAlchemy 不认识，报错 `Can't load plugin: sqlalchemy.dialects:https`
-- **修复**：改为读取 `PGDATABASE_URL`（真正的 PostgreSQL 连接串，如 `postgresql://user:pass@host:5432/db`）
-- 两个变量在沙箱中都存在，但部署环境只有 `PGDATABASE_URL` 有效
+### 6. AI 封面已替换为 video2image 工作流
+- 原来：`_material()` → `llm.generate_image_prompt()` → `_text_to_image()`（生产环境网络受限容易失败）
+- 现在：`POST https://video2image.coze.site/run`（工作流一站式处理）
+- 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
 
-### 7. pip install -q 静默标志导致看不见安装错误
-- **问题**：`.coze` 中 `pip install -q` 会隐藏所有安装输出，部署失败时无法判断是否包没装上
-- **修复**：去掉 `-q` 标志，让 `pip install` 输出完整日志
-- 部署日志现在会显示每个包的下载和安装状态
+### 7. LLM 模型已从硅基流动迁移到 Coze 平台
+- `LLM_PROVIDER=coze`（默认）使用 Coze SDK 的 `LLMClient` 和 `ImageGenerationClient`
+- `LLM_PROVIDER=siliconflow` 仍可切换回硅基流动
+- 文本模型：`doubao-seed-2-0-pro-260215`
+- 生图模型：`doubao-seedream-4-5-251128`（通过火山方舟 Agent Plan）
 
-### 8. 视频解析模型太大，部署环境下载超时
-- **问题**：`faster-whisper` 模型约 461MB，部署环境 build 阶段只有 30 秒超时，根本下载不完
-- **尝试修复**：使用 ModelScope 镜像下载，但缓存格式不兼容
-- **最终修复**：改用 Coze 平台云 ASR 服务（`coze_coding_dev_sdk.ASRClient`），上传音频到对象存储 → 调用云端语音识别，无需本地模型
+### 8. faster-whisper 已移除
+- 生产环境不再需要 faster-whisper（461MB），ASR 使用 Coze 云端服务
+- `requirements.txt` 精简为 14 个包
 
-### 9. 项目清理记录（已执行）
-- `src/hooks/useLocalStorage.js` — 已废弃的死代码，已删除
-- 根目录 `ideabox.db*` — 误生成的数据库文件，已删除
-- `package-lock.json` — 混用 npm 导致的 lock 文件，已删除
-- `assets/` — 临时截图，已删除
-- `server/__init__.py` — 空文件，已删除
-- `server/migrate_cache.py` / `server/migrate_db.py` — 一次性迁移脚本，已删除
-- `server/test_transcribe.py` — 测试脚本，已删除
-- `server/work/` — 空目录，已删除
-
-### 10. Qwen2.5-VL 已下线，用 Qwen3-VL
-- **问题**：硅基流动上 `Qwen/Qwen2.5-VL-7B-Instruct` 返回 "Model does not exist"，32B/72B 返回 "Model disabled"
-- **原因**：账号实际可访问的视觉模型是 **Qwen3-VL 系列**（Qwen2.5-VL 已下线/不可用）
-- **修复**：`VLM_MODEL` 设为 `Qwen/Qwen3-VL-8B-Instruct`（轻量）或 `Qwen/Qwen3-VL-32B-Instruct`（更强）
-- 查询账号可用模型：`GET /v1/models`（Bearer 用 LLM_API_KEY），过滤 VL/Vision 关键词
-
-### 11. 图片/背景音乐视频（无语音）信息在图片里
-- **问题**：ASR 转写为空（视频只有图+音乐），导图没有内容
-- **修复**：`ocr_frames()` 在转写为空时触发，VLM（Qwen-VL）逐帧理解画面语义 + 提取文字，并入 `low_cost_material.json` 的 `ocr_text` 字段
-- **关键帧**：`extract_media` 用 ffmpeg 场景检测（`select='gt(scene,0.3)'`）只抽画面变化的帧，720px
-- **性能**：VLM 逐帧调用较慢，用 `VLM_MAX_FRAMES`（默认 8）限制；成本随帧数增加
+### 9. 视频号解析（元宝）生产环境不可用
+- `sph.litao.workers.dev`（Cloudflare Workers）在 Coze 生产环境被屏蔽
+- 开发环境可配 `HY_TOKEN` 使用，生产环境需通过 Coze 工作流或联网节点解析
