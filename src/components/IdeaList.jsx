@@ -31,7 +31,7 @@ export default function IdeaList({ ideas, onEdit, onDelete, onTogglePin, searchQ
             </div>
             <span className="text-xs text-pop-black/60 font-mono font-bold">{pinned.length}</span>
           </div>
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {pinned.map((idea) => (
               <IdeaCard
                 key={idea.id}
@@ -76,7 +76,7 @@ export default function IdeaList({ ideas, onEdit, onDelete, onTogglePin, searchQ
                   </div>
                   <span className="text-xs text-pop-black/60 font-mono font-bold">▼ {dateIdeas.length}</span>
                 </div>
-                <div className="grid gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {dateIdeas.map((idea) => (
                     <IdeaCard
                       key={idea.id}
