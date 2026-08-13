@@ -1,18 +1,14 @@
 import { useState } from 'react'
-import Inbox from './Inbox'
 import VideoMindmap from './VideoMindmap'
-import VideoNote from './VideoNote'
 import VideoCover from './VideoCover'
 
 const TABS = [
-  { key: 'inbox', label: '收件箱' },
   { key: 'mindmap', label: '思维导图' },
-  { key: 'note', label: 'Markdown 笔记' },
-  { key: 'cover', label: 'AI 封面' },
+  { key: 'cover', label: '信息海报' },
 ]
 
 export default function VideoTools() {
-  const [tab, setTab] = useState('inbox')
+  const [tab, setTab] = useState('mindmap')
 
   return (
     <div>
@@ -33,10 +29,7 @@ export default function VideoTools() {
         ))}
       </div>
 
-      {tab === 'inbox' ? <Inbox />
-        : tab === 'mindmap' ? <VideoMindmap />
-        : tab === 'note' ? <VideoNote />
-        : <VideoCover />}
+      {tab === 'mindmap' ? <VideoMindmap /> : <VideoCover />}
     </div>
   )
 }
