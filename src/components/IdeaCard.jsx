@@ -88,7 +88,7 @@ export default function IdeaCard({ idea, onEdit, onDelete, onTogglePin, searchQu
         </div>
       ) : (
         <p
-          className="text-pop-black leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base font-sans"
+          className="text-pop-black leading-relaxed whitespace-pre-wrap break-words text-[15px] sm:text-base font-sans overflow-hidden"
           dangerouslySetInnerHTML={{ __html: highlightedContent }}
         />
       )}
@@ -114,7 +114,7 @@ export default function IdeaCard({ idea, onEdit, onDelete, onTogglePin, searchQu
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <time title={formatFullDate(idea.createdAt)}>
+            <time title={formatFullDate(idea.createdAt)} className="whitespace-nowrap">
               {formatRelativeTime(idea.createdAt)}
             </time>
           </div>

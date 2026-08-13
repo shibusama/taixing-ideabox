@@ -126,7 +126,7 @@ export default function BoardView({
 
             {/* Collapsed: show badges */}
             {!isExpanded && (
-              <div className="p-3">
+              <div className="p-3 h-[calc(100%-3.5rem)] overflow-y-auto">
                 <div className="flex flex-wrap gap-1.5">
                   {column.ideas.slice(0, 15).map(idea => {
                     // Show a tiny snippet of each idea
