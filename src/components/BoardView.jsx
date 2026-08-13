@@ -158,7 +158,7 @@ export default function BoardView({
 
             {/* Expanded: full idea cards */}
             {isExpanded && (
-              <div className="p-3 space-y-3">
+              <div className="p-3 space-y-3 max-h-96 overflow-y-auto">
                 {column.ideas.map(idea => (
                   <div
                     key={idea.id}
