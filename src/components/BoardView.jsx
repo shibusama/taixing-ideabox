@@ -89,6 +89,7 @@ export default function BoardView({
           <div
             key={column.key}
             className={`bg-white border-3 border-pop-black shadow-pop transition-all duration-150
+              ${isExpanded ? '' : 'h-44'}
               ${isOver ? 'shadow-pop-xl -translate-y-1' : ''}`}
             onDragOver={(e) => {
               e.preventDefault()
