@@ -79,7 +79,7 @@ export default function BoardView({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {columns.map(column => {
         const color = column.tag ? getTagColor(column.tag) : null
         const isOver = dragOverKey === column.key
