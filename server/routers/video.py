@@ -21,7 +21,7 @@ from config import (
     mindmap_progress,
     material_locks,
 )
-from cover import _get_cached_cover, run_cover_task, submit_cover_task
+from cover import _call_workflow, _get_cached_cover, run_cover_task, submit_cover_task
 from db import SessionLocal
 from helpers import _now_ms, _new_id, cache_key, _read_optional, _load_legacy_cache
 from models import Cover, Mindmap, Task
@@ -106,7 +106,7 @@ def _material(key: str, url: str):
 # ---------------------------------------------------------------------------
 
 def _run_task(task_id: str, url: str):
-    """Background job: download/transcribe -> LLM -> persist result."""
+    """Background job: try workflow first, fallback to local download/transcribe -> LLM."""
     key = cache_key(url)
     mindmap_progress[task_id] = "解析视频链接…"
     try:
@@ -121,16 +121,31 @@ def _run_task(task_id: str, url: str):
             result = cached
             mindmap_progress[task_id] = "已命中缓存，直接使用"
         else:
-            mindmap_progress[task_id] = "下载并分析视频内容…"
-            low_cost, preview = _material(key, url)
+            # Try workflow first
+            mindmap_progress[task_id] = "正在通过工作流解析视频…"
+            try:
+                wf_data = _call_workflow(url, "mindmap")
+                mindmap_md = wf_data.get("mindmap_md")
+                if mindmap_md:
+                    result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
+                    with SessionLocal() as db:
+                        db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
+                        db.commit()
+                else:
+                    raise RuntimeError("工作流未返回 mindmap_md，回退本地处理")
+            except Exception as wf_err:
+                # Fallback: local processing
+                mindmap_progress[task_id] = f"工作流不可用，回退本地处理 ({wf_err})"
+                mindmap_progress[task_id] = "下载并分析视频内容…"
+                low_cost, preview = _material(key, url)
 
-            mindmap_progress[task_id] = "生成思维导图中…"
-            mindmap_md = llm.generate_mindmap(low_cost, preview)
+                mindmap_progress[task_id] = "生成思维导图中…"
+                mindmap_md = llm.generate_mindmap(low_cost, preview)
 
-            result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
-            with SessionLocal() as db:
-                db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
-                db.commit()
+                result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
+                with SessionLocal() as db:
+                    db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
+                    db.commit()
 
         mindmap_progress[task_id] = "完成！"
         with SessionLocal() as db:

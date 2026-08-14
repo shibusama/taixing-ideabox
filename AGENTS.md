@@ -36,7 +36,7 @@ pnpm run build
 │   ├── app.py              # FastAPI 入口（注册路由 + 静态文件）
 │   ├── config.py           # 环境变量 + 全局对象
 │   ├── helpers.py          # 工具函数（时间/ID/缓存/数据迁移）
-│   ├── cover.py            # 封面生成工作流（video2image）
+│   ├── cover.py            # 工作流调用（封面/思维导图共用 url2image.coze.site）
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
 │   ├── llm.py              # LLM 接口（Coze 平台默认，siliconflow 备选）
@@ -104,9 +104,9 @@ pnpm run build
 ### 视频工具
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/mindmap` | 创建思维导图任务 |
+| POST | `/api/mindmap` | 创建思维导图任务（优先走工作流，失败回退本地处理） |
 | GET | `/api/mindmap/{task_id}` | 查询导图任务状态 |
-| POST | `/api/cover` | 创建 AI 封面任务（调用 video2image 工作流） |
+| POST | `/api/cover` | 创建 AI 封面任务（调用 url2image 工作流） |
 | GET | `/api/cover/{task_id}` | 查询封面任务状态 |
 
 ### 其他
@@ -125,22 +125,29 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 两种输出（思维导图 / AI 封面）
+9. 视频工具：粘贴视频号/抖音链接 → 优先走 url2image.coze.site 工作流（思维导图 / AI 封面），工作流不可用时回退本地 ASR + VLM + LLM 处理
 
-### AI 封面生成流程
+### 工作流调用（封面 / 思维导图共用）
+
+思维导图和信息海报都优先通过 `url2image.coze.site` 工作流处理，工作流不可用时回退本地处理。
 
 ```
 用户发视频链接
-  → POST /api/cover {url}
-  → 后台 _run_cover_task() 调用 _call_video2image_workflow()
+  → POST /api/cover 或 POST /api/mindmap {url}
+  → 后台调用 _call_workflow(url, output_type="cover"|"mindmap")
   → POST https://url2image.coze.site/run（Bearer Token 认证）
-  → 工作流返回 card_image_url + card_content（标题/要点/摘要/标签）
-  → 存入 Cover 缓存表，前端轮询 GET /api/cover/{task_id} 拿 image_url 显示
+     参数: {"video_url": {...}, "style": "pop", "type": "cover"|"mindmap"}
+  → 工作流返回:
+     - cover 模式: card_image_url + card_content
+     - mindmap 模式: mindmap_md（markmap 格式）
+  → 存入对应缓存表，前端轮询 GET /api/{kind}/{task_id}
 ```
 
-**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词、文生图 API —— 全部由工作流一站式完成。
+**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词/导图 —— 全部由工作流一站式完成。
 
-## 思维导图流程
+### 思维导图本地处理（回退兜底）
+
+当工作流不可用时，自动回退到本地处理流程：
 
 ```
 视频号/抖音链接
@@ -169,7 +176,7 @@ pnpm run build
 | `LLM_MODEL` | 文本模型（Coze 模式默认豆包，siliconflow 模式默认 GLM-5.2） | `doubao-seed-2-0-pro-260215` |
 | `VLM_MODEL` | 视觉理解模型（siliconflow 模式） | `Qwen/Qwen3-VL-8B-Instruct` |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） | `8` |
-| `VIDEO2IMAGE_BASE_URL` | 视频封面工作流地址 | `https://url2image.coze.site` |
+| `VIDEO2IMAGE_BASE_URL` | url2image 工作流地址（封面 + 思维导图共用） | `https://url2image.coze.site` |
 | `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
 
 ## 代码规范
@@ -201,8 +208,10 @@ pnpm run build
 - `WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
 - `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
 
-### 6. AI 封面使用 video2image 工作流
-- 封面生成走 `POST https://url2image.coze.site/run`（工作流一站式处理）
+### 6. 封面和思维导图共用 url2image 工作流
+- 封面生成和思维导图都走 `POST https://url2image.coze.site/run`（工作流一站式处理）
+- 通过 `type` 参数区分：`"cover"`（返回 `card_image_url`）或 `"mindmap"`（返回 `mindmap_md`）
+- 工作流不可用时，思维导图自动回退本地 ASR + VLM + LLM 处理
 - 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
 
 ### 7. LLM 模型已从硅基流动迁移到 Coze 平台

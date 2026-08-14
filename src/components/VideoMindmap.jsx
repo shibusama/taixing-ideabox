@@ -117,7 +117,7 @@ export default function VideoMindmap() {
           </button>
         </form>
         <p className="mt-2 text-[11px] font-mono font-bold text-pop-black/50">
-          后端: {API_BASE} · 首次解析需下载视频+转写，约 1-3 分钟
+          后端: {API_BASE} · 首次解析约 1-3 分钟
         </p>
       </div>
 
@@ -128,7 +128,7 @@ export default function VideoMindmap() {
           <p className="font-display text-lg text-pop-black tracking-wide">
             {progress || '正在解析视频…'}
           </p>
-          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">下载 · 提取音频 · 转写 · 生成导图</p>
+          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">工作流解析 · 下载 · 提取音频 · 转写 · 生成导图</p>
         </div>
       )}
 

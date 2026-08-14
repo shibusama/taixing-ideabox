@@ -24,8 +24,16 @@ def _get_cached_cover(url_hash: str) -> dict | None:
     return None
 
 
-def _call_video2image_workflow(url: str) -> str:
-    """调用 url2image.coze.site 工作流生成知识卡片封面图。"""
+def _call_workflow(url: str, output_type: str = "cover") -> dict:
+    """调用 url2image.coze.site 工作流。
+
+    Args:
+        url: 视频链接
+        output_type: 输出类型，"cover"（信息海报封面）或 "mindmap"（思维导图）
+
+    Returns:
+        工作流返回的完整 JSON dict
+    """
     base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://url2image.coze.site")
     token = os.environ.get("VIDEO2IMAGE_TOKEN", "")
     if not token:
@@ -40,16 +48,23 @@ def _call_video2image_workflow(url: str) -> str:
             json={
                 "video_url": {"url": url, "file_type": "video"},
                 "style": "pop",
+                "type": output_type,
             },
         )
         resp.raise_for_status()
         data = resp.json()
         if data.get("error"):
             raise RuntimeError(f"工作流解析失败: {data['error']}")
-        card_url = data.get("card_image_url")
-        if not card_url:
-            raise RuntimeError("工作流未返回 card_image_url")
-        return card_url
+        return data
+
+
+def _call_video2image_workflow(url: str) -> str:
+    """调用工作流生成知识卡片封面图，返回 card_image_url。"""
+    data = _call_workflow(url, "cover")
+    card_url = data.get("card_image_url")
+    if not card_url:
+        raise RuntimeError("工作流未返回 card_image_url")
+    return card_url
 
 
 def run_cover_task(task_id: str, url: str):
