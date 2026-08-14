@@ -252,21 +252,6 @@ def _template_mindmap(low_cost_material):
 """
 
 
-def _template_note(low_cost_material):
-    title = low_cost_material.get("title", "未知视频")
-    desc = low_cost_material.get("desc", "")
-    author = low_cost_material.get("author", "未知作者")
-    return f"""# 视频笔记：{title}
-
-**作者**: {author}  
-**描述**: {desc}
-
----
-
-> 笔记内容需要通过 ASR 转写获得，当前为无网络回退模式。
-"""
-
-
 # ---------- 公开接口 ----------
 
 def generate_mindmap(low_cost_material, _preview=""):
@@ -321,63 +306,6 @@ def generate_mindmap(low_cost_material, _preview=""):
         return _strip_code_fence(result)
     except Exception as e:
         return _template_mindmap(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
-
-
-def generate_note(low_cost_material, detail=False):
-    """
-    根据视频素材生成 Markdown 笔记
-    detail=True → 详细笔记
-    detail=False → 精简笔记
-    """
-    provider = _get_provider()
-    if provider == "none":
-        return _template_note(low_cost_material)
-
-    meta = low_cost_material.get("metadata", {})
-    title = meta.get("title") or meta.get("description") or "未知视频"
-    desc = meta.get("description") or ""
-    author = meta.get("author") or "未知作者"
-    ocr = low_cost_material.get("ocr_text") or ""
-    segments = low_cost_material.get("selected_segments") or []
-    transcript = "\n".join(
-        f"[{s.get('start', 0)}-{s.get('end', 0)}] {s.get('text', '')}"
-        for s in segments
-        if s.get("text")
-    )
-
-    if detail:
-        system_prompt = """你是一个笔记整理专家。请根据视频信息生成一份详细的 Markdown 笔记。
-要求：
-1. 包含：标题、作者、时间、核心观点、详细内容、关键引述、个人思考
-2. 结构清晰，使用标题和列表
-3. 如果有逐字稿，请提取关键信息并整理成连贯的笔记"""
-    else:
-        system_prompt = """你是一个笔记整理专家。请根据视频信息生成一份精简的 Markdown 笔记。
-要求：
-1. 包含：标题、核心观点、关键要点
-2. 简洁明了，控制在 300 字以内
-3. 以要点列表形式呈现"""
-
-    user_prompt = f"""视频标题：{title}
-作者：{author}
-描述：{desc}
-{'逐字稿：' + transcript if transcript else ''}
-{'画面文字：' + ocr if ocr else ''}
-"""
-
-    try:
-        if provider == "coze":
-            return _chat_completion_coze([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ])
-        else:
-            return _chat_completion([
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ])
-    except Exception as e:
-        return _template_note(low_cost_material) + f"\n\n> LLM 生成失败: {e}"
 
 
 # 启动时自动加载 .env

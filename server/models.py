@@ -59,16 +59,6 @@ class Mindmap(Base):
     created_at = Column(Float, nullable=False)
 
 
-class Note(Base):
-    __tablename__ = "notes"
-
-    url_hash = Column(String, primary_key=True)
-    url = Column(Text, nullable=False)
-    note_md = Column(Text, nullable=False)
-    detail = Column(Boolean, nullable=False, default=False)
-    created_at = Column(Float, nullable=False)
-
-
 class Cover(Base):
     __tablename__ = "covers"
 
@@ -87,7 +77,7 @@ class Task(Base):
     status = Column(String, nullable=False, default="pending")
     result = Column(JSONType, nullable=True)
     error = Column(Text, nullable=True)
-    kind = Column(String, nullable=True)   # mindmap | note | cover（inbox 批量入口用）
+    kind = Column(String, nullable=True)   # mindmap | cover
     key = Column(String, nullable=True)    # url_hash，按链接聚合状态
     created_at = Column(Float, nullable=False)
     updated_at = Column(Float, nullable=False)

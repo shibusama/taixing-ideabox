@@ -6,7 +6,7 @@
 ## 技术栈
 - **React 18** + **Vite 6** + **Tailwind CSS 3**
 - 数据存储：后端 PostgreSQL（部署）/ SQLite（开发），前端 `useIdeas` hook 调 REST API
-- 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频工具（Tab：思维导图 / Markdown 笔记 / AI 封面）
+- 视图切换：列表 / 看板（标签分列 + 拖拽打标签）/ 视频工具（Tab：思维导图 / 信息海报）
 - 后端：Python FastAPI + PostgreSQL（部署）/ SQLite（开发）
 - 包管理器：pnpm
 
@@ -47,7 +47,7 @@ pnpm run build
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   ├── routers/            # 路由模块
 │   │   ├── ideas.py        # 灵感 CRUD / 标签 / 导出导入
-│   │   ├── video.py        # 导图/笔记/封面/收件箱
+│   │   ├── video.py        # 导图/封面
 │   │   └── admin.py        # 健康检查 / 管理 / sph
 │   └── skills/             # 视频解析技能脚本
 │       └── prepare_video.py
@@ -68,13 +68,11 @@ pnpm run build
         ├── IdeaCard.jsx        # 灵感卡片
         ├── IdeaList.jsx        # 列表视图
         ├── BoardView.jsx       # 看板视图
-        ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/笔记/封面切换）
+        ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/封面切换）
         ├── VideoMindmap.jsx    # 视频导图
-        ├── VideoNote.jsx       # 链接转 Markdown 笔记
         ├── VideoCover.jsx      # 视频封面图（轮询 /api/cover/{task_id}）
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
-        ├── Inbox.jsx           # 收件箱（三种任务进度展示）
         └── EmptyState.jsx      # 空状态
 ```
 
@@ -108,17 +106,8 @@ pnpm run build
 |------|------|------|
 | POST | `/api/mindmap` | 创建思维导图任务 |
 | GET | `/api/mindmap/{task_id}` | 查询导图任务状态 |
-| POST | `/api/note` | 创建 Markdown 笔记任务 |
-| GET | `/api/note/{task_id}` | 查询笔记任务状态 |
 | POST | `/api/cover` | 创建 AI 封面任务（调用 video2image 工作流） |
 | GET | `/api/cover/{task_id}` | 查询封面任务状态 |
-
-### 收件箱
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/inbox` | 存入收件箱（同时触发导图/笔记/封面三个任务） |
-| GET | `/api/inbox/{key}` | 查询收件箱任务状态 |
-| GET | `/api/inbox-list` | 收件箱列表 |
 
 ### 其他
 | 方法 | 路径 | 说明 |
@@ -136,7 +125,7 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 三种输出
+9. 视频工具：粘贴视频号/抖音链接 → 后端解析下载 → ASR 转写 + VLM 视觉理解 → 两种输出（思维导图 / AI 封面）
 
 ### AI 封面生成流程
 
@@ -151,7 +140,7 @@ pnpm run build
 
 **不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词、文生图 API —— 全部由工作流一站式完成。
 
-## 思维导图/笔记流程（保持原有）
+## 思维导图流程
 
 ```
 视频号/抖音链接
@@ -161,9 +150,7 @@ pnpm run build
   → 信息提取：
       ├─ ASR 语音转写（Coze 云）→ transcript.txt
       └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL/豆包逐帧理解 → ocr_result.txt
-  → 组装 low_cost_material.json → LLM 生成两种输出之一：
-      ├─ generate_mindmap()      → markmap 思维导图
-      └─ generate_note()         → Markdown 笔记（detail 参数切详细模式）
+  → 组装 low_cost_material.json → LLM 生成 markmap 思维导图
 ```
 
 - **VLM**：`server/llm.py` 的 `describe_image()`，`LLM_PROVIDER=coze` 时用豆包模型，`siliconflow` 时用 Qwen-VL

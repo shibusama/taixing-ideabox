@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 import llm
-from config import _executor, _KINDS, _CACHE_GETTERS, _CACHE_TABLES
+from config import _executor
 from cover import run_cover_task
 from db import init_db, SessionLocal
 from helpers import _migrate_legacy_data, _now_ms
@@ -55,7 +55,8 @@ async def lifespan(_app: FastAPI):
                 pass
             threading.Event().wait(3600)
 
-    threading.Thread(target=_cleanup_loop, daemon=True, start=True)
+    t = threading.Thread(target=_cleanup_loop, daemon=True)
+    t.start()
 
     yield
 
