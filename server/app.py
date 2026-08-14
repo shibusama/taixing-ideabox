@@ -76,6 +76,6 @@ app.include_router(admin.router)
 # ---------------------------------------------------------------------------
 
 BASE_DIR = pathlib.Path(__file__).resolve().parent
-dist_path = BASE_DIR / "dist"
+dist_path = BASE_DIR.parent / "dist"
 if dist_path.exists():
     app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="dist")
