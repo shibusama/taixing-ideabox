@@ -39,18 +39,14 @@ pnpm run build
 │   ├── cover.py            # 工作流调用（封面/思维导图共用 url2image.coze.site）
 │   ├── db.py               # SQLAlchemy 配置
 │   ├── models.py           # 数据模型
-│   ├── llm.py              # LLM 接口（Coze 平台默认，siliconflow 备选）
-│   ├── requirements.txt    # Python 依赖（14 个包）
+│   ├── requirements.txt    # Python 依赖（8 个包）
 │   ├── ideabox.db          # SQLite 数据库（自动创建，已 gitignore）
 │   ├── start.sh            # 启动脚本（部署用）
 │   ├── dev.sh              # 本地开发启动脚本
-│   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   ├── routers/            # 路由模块
 │   │   ├── ideas.py        # 灵感 CRUD / 标签 / 导出导入
 │   │   ├── video.py        # 导图/封面
-│   │   └── admin.py        # 健康检查 / 管理 / sph
-│   └── skills/             # 视频解析技能脚本
-│       └── prepare_video.py
+│   │   └── admin.py        # 健康检查
 └── src/
     ├── main.jsx            # React 入口
     ├── App.jsx             # 主应用
@@ -104,7 +100,7 @@ pnpm run build
 ### 视频工具
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/mindmap` | 创建思维导图任务（优先走工作流，失败回退本地处理） |
+| POST | `/api/mindmap` | 创建思维导图任务（调用 url2image 工作流） |
 | GET | `/api/mindmap/{task_id}` | 查询导图任务状态 |
 | POST | `/api/cover` | 创建 AI 封面任务（调用 url2image 工作流） |
 | GET | `/api/cover/{task_id}` | 查询封面任务状态 |
@@ -113,8 +109,6 @@ pnpm run build
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/api/health` | 健康检查 |
-| POST | `/api/admin/regenerate-mindmaps` | 管理：重生成所有缓存导图 |
-| POST | `/api/sph/resolve` | 视频号链接解析（需 HY_TOKEN） |
 
 ## 核心功能
 1. 快速捕捉灵感，支持 `#标签` 语法
@@ -125,11 +119,11 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频工具：粘贴视频号/抖音链接 → 优先走 url2image.coze.site 工作流（思维导图 / AI 封面），工作流不可用时回退本地 ASR + VLM + LLM 处理
+9. 视频工具：粘贴视频号/抖音链接 → 通过 url2image.coze.site 工作流（思维导图 / AI 封面）一站式处理
 
 ### 工作流调用（封面 / 思维导图共用）
 
-思维导图和信息海报都优先通过 `url2image.coze.site` 工作流处理，工作流不可用时回退本地处理。
+思维导图和信息海报都通过 `url2image.coze.site` 工作流处理。
 
 ```
 用户发视频链接
@@ -143,39 +137,13 @@ pnpm run build
   → 存入对应缓存表，前端轮询 GET /api/{kind}/{task_id}
 ```
 
-**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词/导图 —— 全部由工作流一站式完成。
-
-### 思维导图本地处理（回退兜底）
-
-当工作流不可用时，自动回退到本地处理流程：
-
-```
-视频号/抖音链接
-  → 解析直链（视频号走元宝 /api/sph/resolve，需 HY_TOKEN；抖音走 aweme detail）
-  → 下载 input.mp4
-  → ffmpeg 拆解：提取 audio.wav + 场景检测抽关键帧（720px，scene 阈值 0.3）
-  → 信息提取：
-      ├─ ASR 语音转写（Coze 云）→ transcript.txt
-      └─ VLM 视觉理解（转写为空时触发）→ Qwen-VL/豆包逐帧理解 → ocr_result.txt
-  → 组装 low_cost_material.json → LLM 生成 markmap 思维导图
-```
-
-- **VLM**：`server/llm.py` 的 `describe_image()`，`LLM_PROVIDER=coze` 时用豆包模型，`siliconflow` 时用 Qwen-VL
-- **降级**：VLM 不可用 → 回退 tesseract OCR（仅开发环境）→ 都不可用则跳过
-- **场景检测**：`extract_media` 用 `select='gt(scene,0.3)'` + `-vsync vfr` 只抽画面变化的帧
-- **ASR**：使用 Coze 平台云 ASR 服务（`coze_coding_dev_sdk.ASRClient`），上传音频到对象存储 → 调用云端语音识别
+**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词/导图、ffmpeg —— 全部由工作流一站式完成。
 
 ## 环境变量（server/.env，已 gitignore）
 
 | 变量 | 用途 | 默认值 |
 |------|------|--------|
 | `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） | — |
-| `HY_TOKEN` | 腾讯元宝 cookie（视频号解析） | — |
-| `LLM_PROVIDER` | 模型提供商：`coze`（默认，部署）/ `siliconflow`（本地）/ `none`（模板） | `coze` |
-| `LLM_API_KEY` / `LLM_BASE_URL` | 硅基流动（siliconflow 模式，文本 + VLM + 文生图共用） | — |
-| `LLM_MODEL` | 文本模型（Coze 模式默认豆包，siliconflow 模式默认 GLM-5.2） | `doubao-seed-2-0-pro-260215` |
-| `VLM_MODEL` | 视觉理解模型（siliconflow 模式） | `Qwen/Qwen3-VL-8B-Instruct` |
-| `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） | `8` |
 | `VIDEO2IMAGE_BASE_URL` | url2image 工作流地址（封面 + 思维导图共用） | `https://url2image.coze.site` |
 | `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
 
@@ -209,20 +177,12 @@ pnpm run build
 - `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
 
 ### 6. 封面和思维导图共用 url2image 工作流
-- 封面生成和思维导图都走 `POST https://url2image.coze.site/run`（工作流一站式处理）
+- 封面生成和思维导图都走 `POST https://url2image.coze.site/run`（工作流一站式处理，**无本地回退**）
 - 通过 `type` 参数区分：`"cover"`（返回 `card_image_url`）或 `"mindmap"`（返回 `mindmap_md`）
-- 工作流不可用时，思维导图自动回退本地 ASR + VLM + LLM 处理
 - 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
 
-### 7. LLM 模型已从硅基流动迁移到 Coze 平台
-- `LLM_PROVIDER=coze`（默认）使用 Coze SDK 的 `LLMClient`
-- `LLM_PROVIDER=siliconflow` 仍可切换回硅基流动
-- 文本模型：`doubao-seed-2-0-pro-260215`
-
-### 8. faster-whisper 已移除
-- 生产环境不再需要 faster-whisper（461MB），ASR 使用 Coze 云端服务
-- `requirements.txt` 精简为 14 个包
-
-### 9. 视频号解析（元宝）生产环境不可用
-- `sph.litao.workers.dev`（Cloudflare Workers）在 Coze 生产环境被屏蔽
-- 开发环境可配 `HY_TOKEN` 使用，生产环境需通过 Coze 工作流或联网节点解析
+### 7. 本地处理逻辑已全部移除
+- 不再需要：ffmpeg、ASR 转写、VLM 帧分析、LLM 生成提示词/导图
+- 不再需要：`llm.py`、`skills/prepare_video.py`、`regenerate_mindmaps.py`
+- 不再需要：`HY_TOKEN`（元宝 cookie）、`LLM_PROVIDER`、`LLM_API_KEY` 等环境变量
+- 视频链接解析全部由工作流处理，不再依赖平台特定解析

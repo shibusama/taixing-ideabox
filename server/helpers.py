@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import sys
 import time
 import uuid
 from datetime import datetime
@@ -9,7 +10,7 @@ from datetime import datetime
 from db import SessionLocal
 from models import Idea, Mindmap, Tag, Task
 
-from config import BASE_DIR, LEGACY_CACHE_DIR
+from config import BASE_DIR
 
 
 def _now_ms() -> float:
@@ -22,12 +23,6 @@ def _new_id() -> str:
 
 def cache_key(url: str) -> str:
     return hashlib.sha256(url.strip().encode("utf-8")).hexdigest()[:16]
-
-
-def _read_optional(path):
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    return ""
 
 
 def _rebuild_tags(db):
@@ -114,21 +109,3 @@ def _migrate_legacy_data():
                 src.close()
         print(f"[migrate] copied data from {name}", file=sys.stderr)
         return
-
-
-def _load_legacy_cache(url_hash: str) -> dict | None:
-    """Migrate a cache/*.json entry into the mindmaps table if present."""
-    legacy = LEGACY_CACHE_DIR / f"{url_hash}.json"
-    if not legacy.exists():
-        return None
-    try:
-        data = json.loads(legacy.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    md = data.get("mindmap_md")
-    url = data.get("url") or ""
-    if md:
-        with SessionLocal() as db:
-            db.add(Mindmap(url_hash=url_hash, url=url, mindmap_md=md, created_at=_now_ms()))
-            db.commit()
-    return {"id": url_hash, "cached": True, "mindmap_md": md} if md else None

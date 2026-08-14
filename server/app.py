@@ -8,7 +8,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-import llm
 from config import _executor
 from cover import run_cover_task
 from db import init_db, SessionLocal
