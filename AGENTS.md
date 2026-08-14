@@ -133,7 +133,7 @@ pnpm run build
 用户发视频链接
   → POST /api/cover {url}
   → 后台 _run_cover_task() 调用 _call_video2image_workflow()
-  → POST https://video2image.coze.site/run（Bearer Token 认证）
+  → POST https://url2image.coze.site/run（Bearer Token 认证）
   → 工作流返回 card_image_url + card_content（标题/要点/摘要/标签）
   → 存入 Cover 缓存表，前端轮询 GET /api/cover/{task_id} 拿 image_url 显示
 ```
@@ -169,7 +169,7 @@ pnpm run build
 | `LLM_MODEL` | 文本模型（Coze 模式默认豆包，siliconflow 模式默认 GLM-5.2） | `doubao-seed-2-0-pro-260215` |
 | `VLM_MODEL` | 视觉理解模型（siliconflow 模式） | `Qwen/Qwen3-VL-8B-Instruct` |
 | `VLM_MAX_FRAMES` | VLM 最大帧数（默认 8） | `8` |
-| `VIDEO2IMAGE_BASE_URL` | 视频封面工作流地址 | `https://video2image.coze.site` |
+| `VIDEO2IMAGE_BASE_URL` | 视频封面工作流地址 | `https://url2image.coze.site` |
 | `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
 
 ## 代码规范
@@ -202,7 +202,7 @@ pnpm run build
 - `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
 
 ### 6. AI 封面使用 video2image 工作流
-- 封面生成走 `POST https://video2image.coze.site/run`（工作流一站式处理）
+- 封面生成走 `POST https://url2image.coze.site/run`（工作流一站式处理）
 - 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
 
 ### 7. LLM 模型已从硅基流动迁移到 Coze 平台

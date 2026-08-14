@@ -1,4 +1,4 @@
-"""Cover image generation — delegates to video2image.coze.site workflow."""
+"""Cover image generation — delegates to url2image.coze.site workflow."""
 
 import os
 import uuid
@@ -25,8 +25,8 @@ def _get_cached_cover(url_hash: str) -> dict | None:
 
 
 def _call_video2image_workflow(url: str) -> str:
-    """调用 video2image.coze.site 工作流生成知识卡片封面图。"""
-    base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://video2image.coze.site")
+    """调用 url2image.coze.site 工作流生成知识卡片封面图。"""
+    base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://url2image.coze.site")
     token = os.environ.get("VIDEO2IMAGE_TOKEN", "")
     if not token:
         raise RuntimeError("VIDEO2IMAGE_TOKEN 未配置")
