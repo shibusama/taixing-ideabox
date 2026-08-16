@@ -10,8 +10,6 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
-    "markmap-lib": "^0.18.12",
-    "markmap-view": "^0.18.12",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -19,7 +17,6 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
-    "serve": "^14.2.6",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7"
   }

@@ -29,23 +29,22 @@ pnpm run build
 ├── vite.config.js          # Vite 配置
 ├── tailwind.config.js      # Tailwind 主题配置
 ├── postcss.config.js       # PostCSS 配置
-├── build-and-commit.sh     # 构建+提交脚本（可选）
 ├── public/
 │   └── favicon.svg         # 图标
 ├── server/                 # Python 后端
 │   ├── app.py              # FastAPI 入口（注册路由 + 静态文件）
 │   ├── config.py           # 环境变量 + 全局对象
-│   ├── helpers.py          # 工具函数（时间/ID/缓存/数据迁移）
-│   ├── cover.py            # 工作流调用（封面/思维导图共用 url2image.coze.site）
+│   ├── helpers.py          # 工具函数（时间/ID/数据迁移）
+│   ├── cover.py            # qwen2image 工作流调用（思维导图 / 信息海报）
 │   ├── db.py               # SQLAlchemy 配置
-│   ├── models.py           # 数据模型
-│   ├── requirements.txt    # Python 依赖（8 个包）
+│   ├── models.py           # 6 个数据模型
+│   ├── requirements.txt    # Python 依赖
 │   ├── ideabox.db          # SQLite 数据库（自动创建，已 gitignore）
 │   ├── start.sh            # 启动脚本（部署用）
 │   ├── dev.sh              # 本地开发启动脚本
 │   ├── routers/            # 路由模块
 │   │   ├── ideas.py        # 灵感 CRUD / 标签 / 导出导入
-│   │   ├── video.py        # 导图/封面
+│   │   ├── video.py        # 思维导图 / 信息海报（后台任务调 qwen2image）
 │   │   └── admin.py        # 健康检查
 └── src/
     ├── main.jsx            # React 入口
@@ -64,9 +63,9 @@ pnpm run build
         ├── IdeaCard.jsx        # 灵感卡片
         ├── IdeaList.jsx        # 列表视图
         ├── BoardView.jsx       # 看板视图
-        ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/封面切换）
-        ├── VideoMindmap.jsx    # 视频导图
-        ├── VideoCover.jsx      # 视频封面图（轮询 /api/cover/{task_id}）
+        ├── VideoTools.jsx      # 视频工具 Tab 容器（导图/海报切换）
+        ├── VideoMindmap.jsx    # 思维导图（轮询 qwen2image 结果）
+        ├── VideoCover.jsx      # 信息海报（轮询 qwen2image 结果）
         ├── Sidebar.jsx         # 侧边栏
         ├── SearchBar.jsx       # 搜索栏
         └── EmptyState.jsx      # 空状态
@@ -77,7 +76,7 @@ pnpm run build
 - `dist/` 已构建并提交到 Git，部署时无需前端构建（‼️ `dist/` 不能加 `.gitignore`）
 - 部署流程：
   1. `build` → `pip install -r server/requirements.txt`（安装 Python 依赖）
-  2. `run` → `sh server/start.sh` → `cd server && WORK_ROOT=/tmp/ideabox/work uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
+  2. `run` → `sh server/start.sh` → `cd server && PYTHONPATH=. uvicorn app:app --host 0.0.0.0 --port ${DEPLOY_RUN_PORT}`（启动服务）
 - 服务端 `server/app.py` 注册三个路由模块（`routers/ideas.py`、`routers/video.py`、`routers/admin.py`），统一端口服务：`/api/*` 路由到 API 处理，其余路由返回前端 `dist/` 静态文件
 
 ## API 路由一览
@@ -100,10 +99,10 @@ pnpm run build
 ### 视频工具
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/mindmap` | 创建思维导图任务（调用 url2image 工作流） |
+| POST | `/api/mindmap` | 创建思维导图任务（调用 qwen2image 工作流） |
 | GET | `/api/mindmap/{task_id}` | 查询导图任务状态 |
-| POST | `/api/cover` | 创建 AI 封面任务（调用 url2image 工作流） |
-| GET | `/api/cover/{task_id}` | 查询封面任务状态 |
+| POST | `/api/cover` | 创建信息海报任务（调用 qwen2image 工作流） |
+| GET | `/api/cover/{task_id}` | 查询海报任务状态 |
 
 ### 其他
 | 方法 | 路径 | 说明 |
@@ -119,33 +118,29 @@ pnpm run build
 6. 数据导入/导出（JSON）
 7. 响应式布局
 8. 看板视图：按标签分列，拖拽卡片到列 = 添加标签，拖到「未标签」列 = 清空标签（可撤销）
-9. 视频工具：粘贴视频号/抖音链接 → 通过 url2image.coze.site 工作流（思维导图 / AI 封面）一站式处理
+9. 视频工具：粘贴视频号/抖音链接 → 通过 qwen2image.coze.site 工作流（思维导图 / 信息海报）一站式处理
 
-### 工作流调用（封面 / 思维导图共用）
+### 工作流调用（思维导图 / 信息海报共用）
 
-思维导图和信息海报都通过 `url2image.coze.site` 工作流处理。
+思维导图和信息海报都通过 `qwen2image.coze.site` 工作流处理。
 
 ```
 用户发视频链接
   → POST /api/cover 或 POST /api/mindmap {url}
-  → 后台调用 _call_workflow(url, output_type="cover"|"mindmap")
-  → POST https://url2image.coze.site/run（Bearer Token 认证）
-     参数: {"video_url": {...}, "style": "pop", "type": "cover"|"mindmap"}
-  → 工作流返回:
-     - cover 模式: card_image_url + card_content
-     - mindmap 模式: mindmap_md（markmap 格式）
+  → 后台调用 qwen2image.coze.site/api/generate（multipart/form-data）
+     参数: mode=url, image_url=..., type=mindmap|poster, style=pop
+  → 返回 base64 data URL 图片
   → 存入对应缓存表，前端轮询 GET /api/{kind}/{task_id}
 ```
 
-**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词/导图、ffmpeg —— 全部由工作流一站式完成。
+**不再需要**：本地下载视频、ASR 转写、VLM 帧分析、LLM 生成提示词/导图、ffmpeg、markmap 渲染 —— 全部由工作流一站式完成。
 
 ## 环境变量（server/.env，已 gitignore）
 
 | 变量 | 用途 | 默认值 |
 |------|------|--------|
 | `PGDATABASE_URL` | PostgreSQL 连接串（生产必需，不设回退 SQLite） | — |
-| `VIDEO2IMAGE_BASE_URL` | url2image 工作流地址（封面 + 思维导图共用） | `https://url2image.coze.site` |
-| `VIDEO2IMAGE_TOKEN` | 工作流 Bearer Token（必填） | — |
+| `QWEN2IMAGE_BASE_URL` | qwen2image 工作流地址 | `https://qwen2image.coze.site` |
 
 ## 代码规范
 - 组件使用函数式组件 + Hooks
@@ -172,16 +167,12 @@ pnpm run build
 - 开发环境默认：`http://127.0.0.1:8000`（Python FastAPI 开发服务器）
 - 生产环境默认：`/api`（同源，由 Python 服务统一提供）
 
-### 5. 部署环境 server/ 目录只读，WORK_ROOT 不能放 server/ 下
-- `WORK_ROOT` 通过环境变量注入，部署时设为 `/tmp/ideabox/work`（`/tmp` 可写）
-- `server/start.sh` 中已设置 `export WORK_ROOT=/tmp/ideabox/work`
+### 5. 思维导图和信息海报共用 qwen2image 工作流，无需 Token
+- 思维导图和海报都走 `POST https://qwen2image.coze.site/api/generate`（multipart/form-data，无需 Token）
+- 通过 `type` 参数区分：`"mindmap"`（思维导图）或 `"poster"`（信息海报）
+- 返回 `base64 data URL` 图片，前端直接展示
 
-### 6. 封面和思维导图共用 url2image 工作流
-- 封面生成和思维导图都走 `POST https://url2image.coze.site/run`（工作流一站式处理，**无本地回退**）
-- 通过 `type` 参数区分：`"cover"`（返回 `card_image_url`）或 `"mindmap"`（返回 `mindmap_md`）
-- 需配置 `VIDEO2IMAGE_BASE_URL` 和 `VIDEO2IMAGE_TOKEN`
-
-### 7. 本地处理逻辑已全部移除
+### 6. 本地处理逻辑已全部移除
 - 不再需要：ffmpeg、ASR 转写、VLM 帧分析、LLM 生成提示词/导图
 - 不再需要：`llm.py`、`skills/prepare_video.py`、`regenerate_mindmaps.py`
 - 不再需要：`HY_TOKEN`（元宝 cookie）、`LLM_PROVIDER`、`LLM_API_KEY` 等环境变量

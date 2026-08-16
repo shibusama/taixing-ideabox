@@ -110,24 +110,4 @@ def _migrate_legacy_data():
         print(f"[migrate] copied data from {name}", file=sys.stderr)
         return
 
-def _read_optional(path) -> str:
-    """Read file content if exists, else empty string."""
-    import pathlib
-    p = pathlib.Path(path)
-    if p.exists():
-        return p.read_text(encoding="utf-8", errors="replace")
-    return ""
 
-
-def _load_legacy_cache(url_hash: str) -> dict | None:
-    """Check legacy JSON cache files for a cached result."""
-    import json
-    from config import LEGACY_CACHE_DIR
-    legacy = LEGACY_CACHE_DIR / f"{url_hash}.json"
-    if legacy.exists():
-        try:
-            data = json.loads(legacy.read_text(encoding="utf-8"))
-            return {"id": url_hash, "cached": True, "mindmap_md": data.get("mindmap_md", "")}
-        except Exception:
-            pass
-    return None
