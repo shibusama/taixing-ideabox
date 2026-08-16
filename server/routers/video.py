@@ -11,7 +11,6 @@ import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-import llm
 from config import (
     _executor,
     SKILL_SCRIPT,

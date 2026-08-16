@@ -2,6 +2,7 @@
 
 import os
 import pathlib
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from db import init_db
@@ -30,3 +31,11 @@ _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="task")
 # In-memory task progress (survives task lifetime, not persisted)
 cover_progress: dict[str, str] = {}
 mindmap_progress: dict[str, str] = {}
+
+# Paths
+SKILL_SCRIPT = BASE_DIR / "skills" / "prepare_video.py"
+WORK_ROOT = pathlib.Path(os.environ.get("WORK_ROOT", "/tmp/ideabox/work"))
+LEGACY_CACHE_DIR = pathlib.Path(os.environ.get("LEGACY_CACHE_DIR", "/tmp/ideabox-lowcost"))
+
+# Per-key locks for material preparation
+material_locks: dict[str, threading.Lock] = {}
