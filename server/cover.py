@@ -1,17 +1,45 @@
-"""Cover image generation — delegates to url2image.coze.site workflow."""
+"""Cover / information poster generation via qwen2image.coze.site."""
 
 import os
+import threading
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from config import _executor, cover_progress
 from db import SessionLocal
-from helpers import _now_ms, cache_key
+from helpers import cache_key
 from models import Cover, Task
+
+# Task expiry (30 minutes)
+_TASK_TTL = timedelta(minutes=30)
+
+# Cache for in-flight tasks (url_hash -> task_id)
+_pending_tasks: dict[str, str] = {}
+_lock = threading.Lock()
+
+
+def _now_dt() -> datetime:
+    """Return current UTC datetime (timezone-aware)."""
+    return datetime.now(timezone.utc)
+
+
+def _cleanup_expired_tasks():
+    """Remove tasks older than TTL from database and cache."""
+    cutoff = _now_dt() - _TASK_TTL
+    with SessionLocal() as db:
+        expired = db.query(Task).filter(
+            Task.kind == "cover",
+            Task.updated_at < cutoff,
+        ).all()
+        for task in expired:
+            db.delete(task)
+        db.commit()
 
 
 def _get_cached_cover(url_hash: str) -> dict | None:
+    """Get cached cover result by URL hash."""
     with SessionLocal() as db:
         row = db.query(Cover).filter(Cover.url_hash == url_hash).first()
         if row:
@@ -24,51 +52,48 @@ def _get_cached_cover(url_hash: str) -> dict | None:
     return None
 
 
-def _call_workflow(url: str, output_type: str = "cover") -> dict:
-    """调用 url2image.coze.site 工作流。
+def _call_qwen2image_workflow(url: str, output_type: str = "poster") -> str:
+    """
+    Call qwen2image.coze.site API to generate cover/mindmap.
 
     Args:
-        url: 视频链接
-        output_type: 输出类型，"cover"（信息海报封面）或 "mindmap"（思维导图）
+        url: Video URL
+        output_type: "poster" or "mindmap"
 
     Returns:
-        工作流返回的完整 JSON dict
+        Base64 data URL of generated image
     """
-    base_url = os.environ.get("VIDEO2IMAGE_BASE_URL", "https://url2image.coze.site")
-    token = os.environ.get("VIDEO2IMAGE_TOKEN", "")
-    if not token:
-        raise RuntimeError("VIDEO2IMAGE_TOKEN 未配置")
-    with httpx.Client(timeout=180.0) as client:
+    base_url = os.environ.get("QWEN2IMAGE_BASE_URL", "https://qwen2image.coze.site")
+
+    with httpx.Client(timeout=300.0) as client:
+        # Build multipart form data
+        files = {
+            "mode": (None, "url"),
+            "size": (None, "1024x1024"),
+            "style": (None, "pop"),
+            "type": (None, output_type),
+            "url": (None, url),
+        }
+
         resp = client.post(
-            f"{base_url}/run",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "video_url": {"url": url, "file_type": "video"},
-                "style": "pop",
-                "type": output_type,
-            },
+            f"{base_url}/api/generate",
+            files=files,
         )
         resp.raise_for_status()
         data = resp.json()
-        if data.get("error"):
-            raise RuntimeError(f"工作流解析失败: {data['error']}")
-        return data
 
+        if not data.get("ok"):
+            raise RuntimeError(data.get("detail", "工作流生成失败"))
 
-def _call_video2image_workflow(url: str) -> str:
-    """调用工作流生成知识卡片封面图，返回 card_image_url。"""
-    data = _call_workflow(url, "cover")
-    card_url = data.get("card_image_url")
-    if not card_url:
-        raise RuntimeError("工作流未返回 card_image_url")
-    return card_url
+        image_base64 = data.get("image_base64")
+        if not image_base64:
+            raise RuntimeError("工作流未返回图片数据")
+
+        return image_base64
 
 
 def run_cover_task(task_id: str, url: str):
-    """Background job: call video2image workflow -> persist result."""
+    """Background job: call qwen2image workflow -> persist result."""
     key = cache_key(url)
     cover_progress[task_id] = "解析视频链接…"
     try:
@@ -83,18 +108,29 @@ def run_cover_task(task_id: str, url: str):
             result = cached
             cover_progress[task_id] = "已命中缓存，直接使用"
         else:
-            cover_progress[task_id] = "正在通过工作流解析视频并生成封面…"
-            image_url = _call_video2image_workflow(url)
+            cover_progress[task_id] = "正在通过工作流解析视频并生成海报…"
+            image_data = _call_qwen2image_workflow(url, output_type="poster")
             prompt = ""
 
-            result = {"id": key, "cached": False, "image_url": image_url, "prompt": prompt}
+            result = {
+                "id": key,
+                "cached": False,
+                "image_url": image_data,
+                "prompt": prompt,
+            }
             with SessionLocal() as db:
                 existing = db.get(Cover, key)
                 if existing:
-                    existing.image_url = image_url
+                    existing.image_url = image_data
                     existing.prompt = prompt
                 else:
-                    db.add(Cover(url_hash=key, url=url, image_url=image_url, prompt=prompt, created_at=_now_ms()))
+                    db.add(Cover(
+                        url_hash=key,
+                        url=url,
+                        image_url=image_data,
+                        prompt=prompt,
+                        created_at=_now_ms(),
+                    ))
                 db.commit()
 
         cover_progress[task_id] = "完成！"
@@ -104,6 +140,11 @@ def run_cover_task(task_id: str, url: str):
                 task.status = "done"
                 task.result = result
                 db.commit()
+
+        # Remove from pending cache
+        with _lock:
+            _pending_tasks.pop(key, None)
+
     except Exception as exc:
         cover_progress[task_id] = f"失败: {exc}"
         with SessionLocal() as db:
@@ -112,18 +153,48 @@ def run_cover_task(task_id: str, url: str):
                 task.status = "error"
                 task.error = str(exc)
                 db.commit()
+        with _lock:
+            _pending_tasks.pop(key, None)
+
+
+def _now_ms():
+    """Return current timestamp in milliseconds."""
+    return int(_now_dt().timestamp() * 1000)
 
 
 def submit_cover_task(url: str) -> str | None:
-    """Submit a cover generation task, returning task_id or None if cached."""
+    """Submit a cover generation task. Returns task_id or None if cached."""
+    # Clean up expired tasks periodically
+    _cleanup_expired_tasks()
+
     key = cache_key(url)
-    cached = _get_cached_cover(key)
-    if cached:
+
+    # Check cache first
+    if _get_cached_cover(key):
         return None
+
+    # Check if task already pending
+    with _lock:
+        if key in _pending_tasks:
+            return _pending_tasks[key]
+
+    # Create new task
     task_id = uuid.uuid4().hex[:12]
     now = _now_ms()
     with SessionLocal() as db:
-        db.add(Task(task_id=task_id, url=url, status="pending", kind="cover", key=key, created_at=now, updated_at=now))
+        db.add(Task(
+            task_id=task_id,
+            url=url,
+            status="pending",
+            kind="cover",
+            key=key,
+            created_at=now,
+            updated_at=now,
+        ))
         db.commit()
+
+    with _lock:
+        _pending_tasks[key] = task_id
+
     _executor.submit(run_cover_task, task_id, url)
     return task_id

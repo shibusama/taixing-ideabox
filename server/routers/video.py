@@ -1,14 +1,28 @@
-"""Video pipeline routes: mindmap / cover — both use url2image.coze.site workflow."""
+"""Video pipeline routes: mindmap / poster."""
 
+import json
+import os
+import pathlib
+import subprocess
+import sys
+import threading
 import uuid
 
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from config import _executor, cover_progress, mindmap_progress
-from cover import _call_workflow, _get_cached_cover, run_cover_task, submit_cover_task
+import llm
+from config import (
+    _executor,
+    SKILL_SCRIPT,
+    WORK_ROOT,
+    LEGACY_CACHE_DIR,
+    mindmap_progress,
+    material_locks,
+)
+from cover import _get_cached_cover, submit_cover_task
 from db import SessionLocal
-from helpers import _now_ms, cache_key
+from helpers import _now_ms, cache_key, _read_optional, _load_legacy_cache
 from models import Mindmap, Task
 
 router = APIRouter()
@@ -35,15 +49,63 @@ def _get_cached_mindmap(url_hash: str) -> dict | None:
         row = db.query(Mindmap).filter(Mindmap.url_hash == url_hash).first()
         if row:
             return {"id": url_hash, "cached": True, "mindmap_md": row.mindmap_md}
-    return None
+    return _load_legacy_cache(url_hash)
+
+
+# ---------------------------------------------------------------------------
+# Video material preparation
+# ---------------------------------------------------------------------------
+
+def _prepare_material(key: str, url: str):
+    """Run prepare_video.py once -> (low_cost, transcript_preview). Reuses existing work dir."""
+    work_dir = WORK_ROOT / key
+    low_cost_path = work_dir / "low_cost_material.json"
+    if low_cost_path.exists():
+        low_cost = json.loads(low_cost_path.read_text(encoding="utf-8"))
+        preview = _read_optional(work_dir / "transcript_preview.txt")
+        return low_cost, preview
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(SKILL_SCRIPT),
+            "--url",
+            url,
+            "--work-dir",
+            str(work_dir),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=1200,
+    )
+    if proc.returncode != 0:
+        stderr = proc.stderr.strip()
+        tail_lines = [ln for ln in stderr.splitlines() if ln.strip()][-4:]
+        raise RuntimeError("prepare_video.py failed: " + " | ".join(tail_lines[-2:]))
+
+    if not low_cost_path.exists():
+        raise RuntimeError("low_cost_material.json was not produced")
+    low_cost = json.loads(low_cost_path.read_text(encoding="utf-8"))
+    preview = _read_optional(work_dir / "transcript_preview.txt")
+    return low_cost, preview
+
+
+def _material(key: str, url: str):
+    """Run _prepare_material once per url_hash, guarded by a per-key lock."""
+    lock = material_locks.setdefault(key, threading.Lock())
+    with lock:
+        return _prepare_material(key, url)
 
 
 # ---------------------------------------------------------------------------
 # Mindmap background task
 # ---------------------------------------------------------------------------
 
-def _run_task(task_id: str, url: str):
-    """Background job: call url2image workflow -> persist mindmap result."""
+def _run_mindmap_task(task_id: str, url: str):
+    """Background job: download/transcribe -> qwen2image workflow -> persist result."""
     key = cache_key(url)
     mindmap_progress[task_id] = "解析视频链接…"
     try:
@@ -58,15 +120,43 @@ def _run_task(task_id: str, url: str):
             result = cached
             mindmap_progress[task_id] = "已命中缓存，直接使用"
         else:
-            mindmap_progress[task_id] = "正在通过工作流解析视频并生成思维导图…"
-            wf_data = _call_workflow(url, "mindmap")
-            mindmap_md = wf_data.get("mindmap_md")
-            if not mindmap_md:
-                raise RuntimeError("工作流未返回 mindmap_md")
+            mindmap_progress[task_id] = "下载并分析视频内容…"
 
-            result = {"id": key, "cached": False, "mindmap_md": mindmap_md}
+            # Call qwen2image workflow for mindmap
+            import httpx
+            base_url = os.environ.get("QWEN2IMAGE_BASE_URL", "https://qwen2image.coze.site")
+
+            with httpx.Client(timeout=300.0) as client:
+                files = {
+                    "mode": (None, "url"),
+                    "size": (None, "1024x1024"),
+                    "style": (None, "pop"),
+                    "type": (None, "mindmap"),
+                    "url": (None, url),
+                }
+                resp = client.post(f"{base_url}/api/generate", files=files)
+                resp.raise_for_status()
+                data = resp.json()
+
+                if not data.get("ok"):
+                    raise RuntimeError(data.get("detail", "工作流生成失败"))
+
+                image_base64 = data.get("image_base64")
+                if not image_base64:
+                    raise RuntimeError("工作流未返回图片数据")
+
+            result = {
+                "id": key,
+                "cached": False,
+                "mindmap_md": image_base64,
+            }
             with SessionLocal() as db:
-                db.add(Mindmap(url_hash=key, url=url, mindmap_md=mindmap_md, created_at=_now_ms()))
+                db.add(Mindmap(
+                    url_hash=key,
+                    url=url,
+                    mindmap_md=image_base64,
+                    created_at=_now_ms(),
+                ))
                 db.commit()
 
         mindmap_progress[task_id] = "完成！"
@@ -104,7 +194,7 @@ def create_mindmap(req: MindmapRequest):
     with SessionLocal() as db:
         db.add(Task(task_id=task_id, url=url, status="pending", kind="mindmap", key=key, created_at=now, updated_at=now))
         db.commit()
-    _executor.submit(_run_task, task_id, url)
+    _executor.submit(_run_mindmap_task, task_id, url)
     return {"task_id": task_id}
 
 
@@ -123,7 +213,7 @@ def get_mindmap(task_id: str):
 
 
 # ---------------------------------------------------------------------------
-# Cover routes
+# Poster routes
 # ---------------------------------------------------------------------------
 
 @router.post("/api/cover")

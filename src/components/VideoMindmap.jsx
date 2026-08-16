@@ -1,50 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Transformer } from 'markmap-lib'
-import { Markmap } from 'markmap-view'
 import { API_BASE } from '../config'
-
-const transformer = new Transformer()
 
 export default function VideoMindmap() {
   const [url, setUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const [mindmapMd, setMindmapMd] = useState('')
+  const [imageData, setImageData] = useState('')
   const [cached, setCached] = useState(false)
   const [progress, setProgress] = useState('')
-  const svgRef = useRef(null)
-  const mmRef = useRef(null)
-
-  // Render markmap whenever the markdown changes
-  useEffect(() => {
-    if (!svgRef.current || !mindmapMd) return
-    const { root } = transformer.transform(mindmapMd)
-    if (mmRef.current) {
-      mmRef.current.destroy()
-      mmRef.current = null
-      svgRef.current.innerHTML = ''
-    }
-    // Make sure SVG has explicit dimensions before Markmap reads them
-    const svg = svgRef.current
-    svg.setAttribute('width', '100%')
-    svg.setAttribute('height', '100%')
-    const mm = Markmap.create(svg, {
-      autoFit: true,
-      duration: 0,
-      initialExpandLevel: 99,
-    })
-    mm.setData(root)
-    mmRef.current = mm
-    // Multiple fit calls: container layout may not be settled when effect runs
-    mm.fit()
-    requestAnimationFrame(() => mm.fit())
-    setTimeout(() => mm.fit(), 150)
-    return () => {
-      mm.destroy()
-      mmRef.current = null
-      if (svgRef.current) svgRef.current.innerHTML = ''
-    }
-  }, [mindmapMd])
+  const imgRef = useRef(null)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -53,7 +17,7 @@ export default function VideoMindmap() {
 
     setLoading(true)
     setError(null)
-    setMindmapMd('')
+    setImageData('')
     setProgress('')
 
     try {
@@ -64,9 +28,9 @@ export default function VideoMindmap() {
       })
       const data = await resp.json()
       if (data.error) throw new Error(data.error)
-      // Cache hit: result returned directly, no task to poll
+      // Cache hit: result returned directly
       if (data.result) {
-        setMindmapMd(data.result.mindmap_md)
+        setImageData(data.result.mindmap_md)
         setCached(true)
         setLoading(false)
         return
@@ -80,7 +44,7 @@ export default function VideoMindmap() {
         const state = await poll.json()
         if (state.progress) setProgress(state.progress)
         if (state.status === 'done') {
-          setMindmapMd(state.result.mindmap_md)
+          setImageData(state.result.mindmap_md)
           setCached(state.result.cached)
           setLoading(false)
           return
@@ -128,7 +92,7 @@ export default function VideoMindmap() {
           <p className="font-display text-lg text-pop-black tracking-wide">
             {progress || '正在解析视频…'}
           </p>
-          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">工作流解析 · 下载 · 提取音频 · 转写 · 生成导图</p>
+          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">工作流解析 · 生成思维导图</p>
         </div>
       )}
 
@@ -140,29 +104,37 @@ export default function VideoMindmap() {
         </div>
       )}
 
-      {/* Mindmap */}
-      {mindmapMd && (
+      {/* Mindmap image */}
+      {imageData && (
         <div className="pop-panel bg-white p-3 sm:p-4 animate-pop-in">
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="font-display text-pop-black tracking-wide uppercase">
               思维导图
             </span>
-            {cached && (
-              <span className="text-[10px] font-mono font-bold bg-pop-green text-white border-2 border-pop-black px-1.5 py-0.5">
-                已缓存
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {cached && (
+                <span className="text-[10px] font-mono font-bold bg-pop-green text-white border-2 border-pop-black px-1.5 py-0.5">
+                  已缓存
+                </span>
+              )}
+              <a
+                href={imageData}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[10px] font-mono font-bold border-2 border-pop-black px-1.5 py-0.5 hover:bg-pop-black hover:text-white transition-colors"
+              >
+                新窗口打开
+              </a>
+            </div>
           </div>
-          <div className="w-full border-2 border-pop-black bg-cream overflow-hidden" style={{ height: '60vh', minHeight: '400px' }}>
-            <svg
-              ref={svgRef}
-              className="w-full h-full block"
-              xmlns="http://www.w3.org/2000/svg"
+          <div className="w-full border-2 border-pop-black bg-cream overflow-hidden">
+            <img
+              ref={imgRef}
+              src={imageData}
+              alt="思维导图"
+              className="w-full h-auto block"
             />
           </div>
-          <p className="mt-2 text-[11px] font-mono font-bold text-pop-black/50">
-            拖动空白处平移 · 滚轮缩放 · 点击节点展开/收起
-          </p>
         </div>
       )}
     </div>

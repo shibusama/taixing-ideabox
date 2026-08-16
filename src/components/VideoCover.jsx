@@ -17,6 +17,7 @@ export default function VideoCover() {
     setLoading(true)
     setError(null)
     setCover(null)
+    setProgress('')
 
     try {
       const resp = await fetch(`${API_BASE}/api/cover`, {
@@ -67,7 +68,7 @@ export default function VideoCover() {
             type="url"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="粘贴视频号 / 抖音视频链接，生成 AI 封面图"
+            placeholder="粘贴视频号 / 抖音视频链接，生成信息海报"
             className="input-pop flex-1 px-3 py-2.5 text-sm font-sans"
           />
           <button
@@ -75,11 +76,11 @@ export default function VideoCover() {
             disabled={loading || !url.trim()}
             className="btn-pop-blue text-sm px-5 py-2.5 flex-shrink-0"
           >
-            {loading ? '生成中…' : '生成封面!'}
+            {loading ? '生成中…' : '生成海报!'}
           </button>
         </form>
         <p className="mt-2 text-[11px] font-mono font-bold text-pop-black/50">
-          后端: {API_BASE} · AI 分析视频内容 → 生成波普漫画风封面图 · 约 1-3 分钟
+          后端: {API_BASE} · AI 分析视频内容 → 生成信息海报 · 约 1-3 分钟
         </p>
       </div>
 
@@ -88,9 +89,9 @@ export default function VideoCover() {
         <div className="pop-panel bg-white p-8 text-center animate-pop-in">
           <div className="inline-block w-10 h-10 border-3 border-pop-black border-t-transparent animate-spin mb-3" />
           <p className="font-display text-lg text-pop-black tracking-wide">
-            {progress || '正在生成封面…'}
+            {progress || '正在生成海报…'}
           </p>
-          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">下载 · 转写 · 分析内容 · 绘制封面</p>
+          <p className="text-xs font-mono font-bold text-pop-black/50 mt-1">工作流解析 · 生成海报</p>
         </div>
       )}
 
@@ -107,7 +108,7 @@ export default function VideoCover() {
         <div className="pop-panel bg-white p-4 sm:p-6 animate-pop-in">
           <div className="flex items-center justify-between mb-3 px-1">
             <span className="font-display text-pop-black tracking-wide uppercase">
-              AI 封面
+              信息海报
             </span>
             <div className="flex items-center gap-2">
               {cached && (
@@ -128,20 +129,10 @@ export default function VideoCover() {
           <div className="border-2 border-pop-black bg-cream overflow-hidden">
             <img
               src={cover.image_url}
-              alt="AI 生成封面"
+              alt="信息海报"
               className="w-full h-auto block"
             />
           </div>
-          {cover.prompt && (
-            <div className="mt-3">
-              <p className="text-[11px] font-mono font-bold text-pop-black/50 mb-1 uppercase">
-                提示词
-              </p>
-              <p className="text-xs font-mono text-pop-black/70 bg-cream border-2 border-pop-black p-2 break-all">
-                {cover.prompt}
-              </p>
-            </div>
-          )}
         </div>
       )}
     </div>
