@@ -1,6 +1,6 @@
 # 灵感匣 IdeaBox
 
-个人灵感与想法记录平台，支持快速捕捉、标签分类、看板管理、视频思维导图。
+个人灵感与想法记录平台，支持快速捕捉、标签分类、看板管理、视频思维导图，以及**行动计划**（树状分叉 + 进展流 + 状态自动推进）。
 
 ## 技术栈
 
@@ -23,11 +23,13 @@
 │   │   ├── VideoNote.jsx   # 链接转 Markdown 笔记
 │   │   ├── VideoCover.jsx  # 链接转 AI 封面图
 │   │   ├── Inbox.jsx       # 收件箱（链接自动入库列表）
+│   │   ├── PlansView.jsx   # 行动计划视图（计划列表 + 树 + 时间线）
 │   │   ├── Sidebar.jsx     # 侧边栏
 │   │   ├── SearchBar.jsx   # 搜索栏
 │   │   └── EmptyState.jsx  # 空状态
 │   ├── hooks/              # 自定义 Hooks
-│   │   └── useIdeas.js     # 灵感 CRUD（调 API）
+│   │   ├── useIdeas.js     # 灵感 CRUD（调 API）
+│   │   └── usePlans.js     # 行动计划 CRUD（计划/节点/进展）
 │   ├── utils/helpers.js    # 工具函数
 │   ├── data/tags.js        # 标签颜色配置
 │   ├── config.js           # 前端配置（API 地址等）
@@ -42,10 +44,14 @@
 │   ├── cover_render.py     # AI 封面 SVG 渲染（COVER_METHOD=svg 时文字叠字）
 │   ├── requirements.txt    # Python 依赖
 │   ├── requirements-dev.txt# 开发依赖
-│   ├── start.sh            # 启动脚本（Coze 部署用）
+│   ├── alembic.ini         # Alembic 数据库迁移配置
+│   ├── start.sh            # 启动脚本（Coze 部署用，自动跑迁移）
 │   ├── dev.sh              # 本地开发启动脚本
 │   ├── README.md           # 后端说明文档
-│   ├── migrations/         # 生产库建表 SQL
+│   ├── migrations/         # Alembic 迁移脚本（自动建表/改表，含基线）
+│   └── routers/
+│       ├── ideas.py        # 灵感 CRUD
+│       └── plans.py        # 行动计划（计划/树节点/进展流）
 │   ├── regenerate_mindmaps.py  # 思维导图重生成脚本
 │   └── skills/             # 视频解析技能脚本
 ├── public/                 # 静态资源（favicon 等）
@@ -144,7 +150,12 @@ sh build-and-commit.sh
 
 ## 数据存储
 
-本地开发使用 `server/ideabox.db`（SQLite，首次启动自动建表）；生产环境（Coze 部署）通过环境变量 `PGDATABASE_URL` 连接 PostgreSQL。数据访问一律通过后端 API，前端不直接读写数据库。
+数据通过 **Alembic** 自动迁移建表/改表，无需手动执行 SQL：
+
+- **本地**：`server/ideabox.db`（SQLite）
+- **生产（Coze）**：环境变量 `PGDATABASE_URL` 连接 PostgreSQL；不设则回退 SQLite
+
+连接逻辑（自动降级）：设了 `PGDATABASE_URL` → PostgreSQL，否则 → 本地 SQLite（见 `server/db.py`）。启动/部署时 `alembic upgrade head` 自动把数据库迁移到最新结构（含 `plans` 计划三表）。数据访问一律通过后端 API，前端不直接读写数据库。
 
 ## 视频工具（核心链路）
 

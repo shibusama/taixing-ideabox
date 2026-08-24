@@ -65,17 +65,18 @@ git push
 
 ### 数据库
 
-- Postgres 表需**手动建表**（`Base.metadata.create_all()`，SQLite 才自动建）。
-- 表结构：`ideas` / `tags` / `mindmaps` / `notes` / `covers` / `tasks`。
-- `notes` / `covers` 为新增表，建表 SQL 在 `server/migrations/`（`create_notes.sql` / `create_covers.sql`），部署时需在生产库执行。
-- 本地和 Coze 连**同一个库**才能共享数据。
+- 表结构由 **Alembic** 自动迁移创建/更新（`alembic upgrade head`），**无需手动建表**。
+- `server/start.sh` 启动前会自动执行 `alembic upgrade head`，部署即自动建表（含 `plans` 计划三表 `plans` / `plan_nodes` / `plan_logs`）。
+- 连接逻辑（自动降级）：设了 `PGDATABASE_URL` → 迁移 PostgreSQL；没设 → 本地 SQLite（`server/ideabox.db`）。
+- 本地和 Coze 连**同一个 Postgres 库**（配同一个 `PGDATABASE_URL`）才能共享数据。
+- 若手动维护过旧库，需先跑一次 `alembic stamp head`（在已按 ORM 建过表的库上）或直接 `alembic upgrade head`（新库自动建全部表）。
 
 ## 三、部署流程（Coze 平台）
 
 1. 本地改代码 → `pnpm run build`（如改了前端）→ `git commit` → `git push`
 2. Coze 平台触发部署：
-   - build：`pip install -r server/requirements.txt`
-   - run：`sh server/start.sh` → `uvicorn app:app --port ${DEPLOY_RUN_PORT}`
+   - build：`pip install -r server/requirements.txt`（含 alembic）
+   - run：`sh server/start.sh` → 先 `alembic upgrade head` 自动迁移建表，再 `uvicorn app:app --port ${DEPLOY_RUN_PORT}`
 3. 验证：访问 `/api/health`，正常返回 `{"ok":true}`
 
 ## 四、已知坑
