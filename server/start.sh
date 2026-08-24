@@ -7,9 +7,9 @@ echo "[start.sh] Python=$(python3 --version 2>&1)" >&2
 echo "[start.sh] PGDATABASE_URL=${PGDATABASE_URL:+SET}" >&2
 echo "[start.sh] WORK_ROOT=${WORK_ROOT}" >&2
 
-# 数据库自动迁移：把数据库升到最新表结构（自动建表/改表，幂等）
-# - 设了 PGDATABASE_URL -> 迁移 PostgreSQL
-# - 没设 -> 迁移本地 SQLite。无需手动执行建表 SQL。
+# Auto-migrate DB schema: alembic upgrade head (idempotent)
+# - PGDATABASE_URL set -> migrate PostgreSQL
+# - not set -> migrate local SQLite. No manual DDL needed.
 echo "[start.sh] alembic upgrade head ..." >&2
 python -m alembic upgrade head
 
