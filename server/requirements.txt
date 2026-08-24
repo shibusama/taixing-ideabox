@@ -6,3 +6,6 @@ python-multipart>=0.0.12
 python-dotenv>=1.0
 pydantic>=2.10
 httpx>=0.28.1
+
+# 数据库迁移（自动建表/改表）
+alembic>=1.13

@@ -44,6 +44,39 @@ LLM 生成（三种出口，共用同一份材料）：
 
 > PostgreSQL 表需手动建表（`Base.metadata.create_all()`，仅 SQLite 自动建）。本地和线上连同一个库才能共享数据。
 > 新增表的建表 SQL 见 `server/migrations/`（`create_notes.sql` / `create_covers.sql`），生产库需手动执行。
+> ⚠️ **已引入 Alembic 自动迁移**，新建/修改表结构建议走 Alembic（见下文「数据库迁移」），不再需要手写建表 SQL。
+
+## 数据库迁移（Alembic）
+
+项目使用 **Alembic**（SQLAlchemy 官方迁移工具）自动建表/改表，工业界标准做法。配置在 `server/alembic.ini`，迁移脚本在 `server/migrations/`。
+
+**日常用法：**
+
+```bash
+cd server
+
+# 1. 让数据库自动升到最新结构（自动建表/改表，不用手写 SQL）
+alembic upgrade head
+
+# 2. 改完 models.py 之后，自动生成迁移版本
+alembic revision --autogenerate -m "加个字段"
+
+# 3. 应用到数据库
+alembic upgrade head
+
+# 查看当前版本 / 历史 / 目标库 SQL(离线预览)
+alembic current
+alembic history
+alembic upgrade head --sql
+```
+
+**连接逻辑（自动降级）：**
+- 设了 `PGDATABASE_URL` → 迁移 **PostgreSQL**
+- 没设 → 迁移本地 **SQLite**（`server/ideabox.db`）
+
+**部署时自动迁移：** 启动脚本里先 `alembic upgrade head` 再起服务，即可自动建表，无需手动执行 SQL。
+
+> Alembic 的首次迁移（`alembic version` 空库）会自动创建全部表（含 `plans` 计划三表）。已有旧库请先跑一次 `alembic upgrade head` 建立版本基线。
 
 前端数据从 LocalStorage 迁移到后端 API（`src/hooks/useIdeas.js`），首次加载时若数据库为空且浏览器仍有旧 LocalStorage 数据会自动导入一次。
 
