@@ -26,6 +26,7 @@ server/backend*.log
 server/work/
 *.db-shm
 *.db-wal
+debug.log
 
 # 本地启动脚本（个人用，不进库）
 start-server.bat

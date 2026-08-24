@@ -75,6 +75,16 @@ export default function Header({ onToggleSidebar, sidebarOpen, view, onViewChang
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
               </button>
+              <button
+                onClick={() => onViewChange('plans')}
+                className={`p-2 transition-colors ${view === 'plans' ? 'bg-pop-blue text-white' : 'bg-white text-pop-black hover:bg-pop-yellow'}`}
+                aria-label="行动计划"
+                title="行动计划"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a2 2 0 012-2h12a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V5zM9 3v18M13 8h3M13 12h3M13 16h3" />
+                </svg>
+              </button>
             </div>
 
             <div className="hidden sm:flex items-center gap-1.5 text-xs font-bold font-mono bg-white border-2 border-pop-black px-2.5 py-1 shadow-pop-sm">

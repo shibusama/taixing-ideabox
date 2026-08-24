@@ -4,6 +4,7 @@ import IdeaInput from './components/IdeaInput'
 import IdeaList from './components/IdeaList'
 import BoardView from './components/BoardView'
 import VideoTools from './components/VideoTools'
+import PlansView from './components/PlansView'
 import Sidebar from './components/Sidebar'
 import SearchBar from './components/SearchBar'
 import EmptyState from './components/EmptyState'
@@ -137,9 +138,19 @@ export default function App() {
           onViewChange={setView}
         />
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className={`mx-auto px-4 sm:px-6 lg:px-8 py-6 ${view === 'video' || view === 'plans' ? 'max-w-[1600px]' : 'max-w-7xl'}`}>
           <div className="flex gap-8">
-            {/* Sidebar - desktop */}
+            {/* Sidebar - desktop (hidden in full-width plan/video views) */}
+            {view === 'plans' || view === 'video' ? (
+              <main className="w-full min-w-0">
+                {view === 'video' ? (
+                  <VideoTools />
+                ) : (
+                  <PlansView />
+                )}
+              </main>
+            ) : (
+              <>
             <div className="hidden lg:block w-72 flex-shrink-0">
               <div className="sticky top-20">
                 <Sidebar
@@ -159,11 +170,7 @@ export default function App() {
             </div>
 
             {/* Main content */}
-            <main className={`flex-1 min-w-0 mx-auto lg:mx-0 ${view === 'video' ? 'max-w-5xl' : 'max-w-3xl'}`}>
-              {view === 'video' ? (
-                <VideoTools />
-              ) : (
-                <>
+            <main className="flex-1 min-w-0 mx-auto lg:mx-0 max-w-3xl">
               {/* Quick capture */}
               <div className="mb-6">
                 <IdeaInput onAdd={addIdea} />
@@ -233,9 +240,9 @@ export default function App() {
                   searchQuery={searchQuery}
                 />
               )}
-                </>
-              )}
             </main>
+            </>
+            )}
           </div>
         </div>
       </div>

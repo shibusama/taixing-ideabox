@@ -13,7 +13,7 @@ from cover import run_cover_task
 from db import init_db, SessionLocal
 from helpers import _migrate_legacy_data, _now_ms
 from models import Task
-from routers import admin, ideas, video
+from routers import admin, ideas, plans, video
 
 # ---------------------------------------------------------------------------
 # Startup
@@ -61,6 +61,7 @@ app = FastAPI(lifespan=lifespan)
 # ---------------------------------------------------------------------------
 
 app.include_router(ideas.router)
+app.include_router(plans.router)
 app.include_router(video.router)
 app.include_router(admin.router)
 
